@@ -1,4 +1,8 @@
+.env
 __pycache__/
 *.log
 .venv/
 data/relatorio_fechamentos/*.xlsx
+data/radar_fiscal/*.xlsx
+data/analise_balanco/*.xlsx
+data/analise_balanco/_temp/
