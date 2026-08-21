@@ -95,8 +95,20 @@ def executar(log=None) -> pd.DataFrame:
         if log:
             log(msg)
 
-    _log("Rodando robô do Radar Fiscal...")
+    _log("Carregando os robôs-fonte...")
     robo_radar = _carregar_modulo("radar_fiscal_robo", CAMINHO_ROBO_RADAR)
+    robo_balanco = _carregar_modulo("analise_balanco_robo", CAMINHO_ROBO_BALANCO)
+
+    # Checagem antes de qualquer coisa: se uma execução anterior travou/
+    # crashou no meio, o MG Apps e/ou a janela "Análise de Balanço" podem ter
+    # ficado abertos — começar sempre do zero (fechando os dois se existirem)
+    # evita herdar um estado desconhecido de qualquer um dos dois numa nova
+    # execução (a pedido do usuário, 2026-08-21).
+    _log("Checando se MG Apps/Análise de Balanço ficaram abertos de uma execução anterior...")
+    robo_radar._fechar_mgapps_se_existir(log)
+    robo_balanco.radar_fechamento._fechar_analise_balanco_se_existir(log)
+
+    _log("Rodando robô do Radar Fiscal...")
     # python-dotenv não sobrescreve variáveis de ambiente já setadas
     # (override=False) — se este orquestrador rodar dentro de um processo
     # compartilhado com outros robôs (ex.: hub "Atualização de bases", que
@@ -110,8 +122,19 @@ def executar(log=None) -> pd.DataFrame:
     robo_radar.SENHA = env_radar.get("SENHA", robo_radar.SENHA)
     df_radar = robo_radar.executar(log=log)
 
+    # O Radar Fiscal já fecha as telas do "Sistema de Analise" no final do
+    # seu próprio executar() (dentro de um try/finally, mesmo se algo falhar
+    # no meio), mas deixa o launcher "MG Apps" em si aberto de propósito
+    # (pra reaproveitar depois). Rodando os dois robôs em sequência isso
+    # causou falha em cascata (2026-08-21): o robô da Análise de Balanço
+    # reaproveitava esse MGApps ainda "quente" da primeira execução e
+    # travava procurando o tile 'Analise Balanço'. Por isso aqui fechamos
+    # explicitamente antes de começar o segundo robô — reaproveita a própria
+    # função que o radar_fiscal.py usa pra fazer o mesmo no início do seu
+    # executar(), sem duplicar a lógica.
+    robo_radar._fechar_mgapps_se_existir(log)
+
     _log("Rodando robô da Análise de Balanço...")
-    robo_balanco = _carregar_modulo("analise_balanco_robo", CAMINHO_ROBO_BALANCO)
     env_balanco = dotenv_values(CAMINHO_ROBO_BALANCO.parent.parent / ".env")
     robo_balanco.retorno_checklist.USUARIO = env_balanco.get("INTRANET_USUARIO", robo_balanco.retorno_checklist.USUARIO)
     robo_balanco.retorno_checklist.SENHA = env_balanco.get("INTRANET_SENHA", robo_balanco.retorno_checklist.SENHA)
