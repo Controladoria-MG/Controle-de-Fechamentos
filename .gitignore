@@ -1,0 +1,4 @@
+__pycache__/
+*.log
+.venv/
+data/relatorio_fechamentos/*.xlsx

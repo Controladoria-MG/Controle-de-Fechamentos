@@ -1,0 +1,8 @@
+pandas
+openpyxl
+xlsxwriter
+pywinauto
+pywin32
+selenium
+webdriver-manager
+python-dotenv
