@@ -280,10 +280,7 @@ def _fechar_mgapps_se_existir(log=None):
     except TimeoutError:
         return
     _log("MGApps já estava aberto — fechando para começar do zero...", log)
-    try:
-        _conectar(handle).close()
-    except Exception:
-        pass
+    _matar_processo_da_janela(handle, log)
     time.sleep(1)
 
 
@@ -447,6 +444,24 @@ def _fechar_janela_se_existir(titulo: str, exato: bool = True, timeout: float = 
         pass
 
 
+def _matar_processo_da_janela(hwnd: int, log=None):
+    """Encerra à força o processo dono da janela. `.close()` via UI
+    Automation não fecha esses apps de fato — visto ao vivo em 2026-08-24:
+    Menu/Departamento Fiscal/Controle de Análise Fechamento Escrita Fiscal
+    e o próprio MG Apps continuavam abertos (só 'estacionados' fora da
+    tela) mesmo com o `.close()` rodando sem erro dentro do try/finally.
+    Como esses processos existem só pra essa automação (a próxima execução
+    sempre fecha e reabre do zero, nunca reaproveita), matar por PID é
+    seguro — e mais rápido que procurar e fechar janela por janela."""
+    try:
+        _, pid = win32process.GetWindowThreadProcessId(hwnd)
+        handle_proc = win32api.OpenProcess(win32con.PROCESS_TERMINATE, False, pid)
+        win32api.TerminateProcess(handle_proc, 0)
+        win32api.CloseHandle(handle_proc)
+    except Exception as e:
+        _log(f"AVISO: não consegui encerrar o processo da janela ({e}).", log)
+
+
 def _abrir_controle_status(fiscal, log=None):
     _log("Abrindo Análise Fechamento Escrita Fiscal > Controle de Status...", log)
     _invocar(fiscal, title="Análise Fechamento Escrita Fiscal", control_type="MenuItem")
@@ -510,16 +525,42 @@ def _exportar_planilha_mercados(janela, caminho_destino: Path, log=None):
     PASTA_DOWNLOADS.mkdir(parents=True, exist_ok=True)
     antes = {p.name for p in PASTA_DOWNLOADS.glob("Fechamento Escrita Fiscal*.xlsx")}
 
-    _invocar(janela, title="Relatório", control_type="MenuItem")
-    popup = _localizar_popup_menu()
+    # Mesma classe de bug já corrigida em _exportar_excel (2026-08-21): o popup
+    # do menu "Relatório" às vezes não abre a tempo no primeiro invoke — retry
+    # com ESC entre tentativas.
+    popup = None
+    for tentativa in range(1, 4):
+        send_keys("{ESC}")
+        time.sleep(0.3)
+        _invocar(janela, title="Relatório", control_type="MenuItem")
+        try:
+            popup = _localizar_popup_menu()
+            break
+        except TimeoutError:
+            _log(f"Menu 'Relatório' não abriu (tentativa {tentativa}/3), tentando de novo...", log)
+    if popup is None:
+        raise TimeoutError("Não foi possível abrir o menu 'Relatório' após 3 tentativas.")
     _clicar_item_do_menu(popup, indice=0)  # "Exportar Excel" é o único item
 
     pasta_handle = _janela_por_titulo("Procurar Pasta", timeout=TIMEOUT_ELEMENTO)
     pasta_dlg = _conectar(pasta_handle)
-    item = pasta_dlg.child_window(title="Downloads", control_type="TreeItem")
-    item.click_input()
-    time.sleep(0.3)
-    _invocar(pasta_dlg, title="OK", control_type="Button")
+
+    # Confirma que a caixa "Procurar Pasta" realmente fechou depois do OK —
+    # se a seleção da pasta "Downloads" não registrar a tempo (click_input
+    # sem confirmação), o diálogo pode ficar aberto ou exportar para outra
+    # pasta, e o polling abaixo só descobriria isso depois de bater os 120s
+    # inteiros sem nunca achar o arquivo. Retry uma vez se não fechar.
+    for tentativa in range(1, 3):
+        item = pasta_dlg.child_window(title="Downloads", control_type="TreeItem")
+        item.click_input()
+        time.sleep(0.3)
+        _invocar(pasta_dlg, title="OK", control_type="Button")
+        time.sleep(0.5)
+        if not win32gui.IsWindow(pasta_handle) or not win32gui.IsWindowVisible(pasta_handle):
+            break
+        _log(f"Caixa 'Procurar Pasta' não fechou (tentativa {tentativa}/2), tentando de novo...", log)
+    else:
+        raise TimeoutError("Caixa 'Procurar Pasta' não fechou após selecionar 'Downloads'.")
 
     fim = time.time() + TIMEOUT_EXPORTACAO
     novo = None
@@ -585,10 +626,26 @@ def _processar_resumo(df_radar: pd.DataFrame, df_mercados: pd.DataFrame, log=Non
 
 
 def _fechar_sistema_analise(log=None):
+    """Menu/Departamento Fiscal/Radar/Controle de Análise Fechamento Escrita
+    Fiscal/Login são todas telas do mesmo processo (uma única instância do
+    'Sistema de Analise') — acha qualquer uma delas ainda aberta e mata o
+    processo, o que derruba as outras junto. Mais rápido e mais confiável
+    do que `_fechar_janela_se_existir()` (`.close()` via UIA) janela por
+    janela, que deixava telas presas mesmo depois de "fechar" sem erro."""
     _log("Fechando Sistema de Analise...", log)
-    _fechar_janela_se_existir("Controle de Análise Fechamento Escrita Fiscal")
-    for titulo in ("Radar", "Departamento Fiscal", "Menu"):
-        _fechar_janela_se_existir(titulo, exato=(titulo != "Departamento Fiscal"))
+    for titulo, exato in (
+        ("Controle de Análise Fechamento Escrita Fiscal", True),
+        ("Radar", True),
+        ("Departamento Fiscal", False),
+        ("Menu", True),
+        ("Login", True),
+    ):
+        try:
+            handle = _janela_por_titulo(titulo, exato=exato, timeout=1)
+        except TimeoutError:
+            continue
+        _matar_processo_da_janela(handle, log)
+        return
 
 
 def _log(msg, log=None):

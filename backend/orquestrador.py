@@ -154,61 +154,70 @@ def executar(log=None) -> pd.DataFrame:
     radar_fiscal._fechar_mgapps_se_existir(log)
     radar_fechamento._fechar_analise_balanco_se_existir(log)
 
-    _log("Rodando robô do Radar Fiscal...")
-    df_radar = radar_fiscal.executar(log=log)
+    # Tudo abaixo fica num try/finally pra garantir que o launcher "MG Apps"
+    # feche no final mesmo se algum passo falhar no meio (ex.: o clique que
+    # abre 'Sistema de Analise' falhando após as 3 tentativas) — antes só
+    # fechava depois de tudo dar certo, e uma falha deixava o MG Apps preso
+    # até a próxima execução (visto ao vivo em 2026-08-24).
+    try:
+        _log("Rodando robô do Radar Fiscal...")
+        df_radar = radar_fiscal.executar(log=log)
 
-    # O Radar Fiscal já fecha suas próprias telas do "Sistema de Analise" no
-    # final do seu executar() (dentro de um try/finally, mesmo se algo
-    # falhar no meio), mas deixa o launcher "MG Apps" em si aberto de
-    # propósito (pra reaproveitar depois). Fechamos aqui antes do segundo
-    # robô abrir de novo — evita reaproveitar um MGApps "quente" que trava
-    # procurando o tile 'Analise Balanço'.
-    radar_fiscal._fechar_mgapps_se_existir(log)
+        # O Radar Fiscal já fecha suas próprias telas do "Sistema de Analise"
+        # no final do seu executar() (dentro de um try/finally, mesmo se algo
+        # falhar no meio), mas o launcher "MG Apps" em si continua aberto.
+        # Fechamos aqui antes do segundo robô abrir de novo — evita
+        # reaproveitar um MGApps "quente" que trava procurando o tile
+        # 'Analise Balanço'.
+        radar_fiscal._fechar_mgapps_se_existir(log)
 
-    _log("Rodando robô da Análise de Balanço...")
-    arquivo_radar_fechamento = radar_fechamento.executar(log)
-    arquivo_checklist = retorno_checklist.executar(log)
-    df_balanco = resumo_balanco.gerar_resumo(arquivo_radar_fechamento, arquivo_checklist, ARQUIVO_RESUMO_BALANCO)
-    _log(f"Análise de Balanço: {len(df_balanco)} registros.")
+        _log("Rodando robô da Análise de Balanço...")
+        arquivo_radar_fechamento = radar_fechamento.executar(log)
+        arquivo_checklist = retorno_checklist.executar(log)
+        df_balanco = resumo_balanco.gerar_resumo(arquivo_radar_fechamento, arquivo_checklist, ARQUIVO_RESUMO_BALANCO)
+        _log(f"Análise de Balanço: {len(df_balanco)} registros.")
 
-    PASTA_DADOS_BALANCO.mkdir(parents=True, exist_ok=True)
-    _gerar_json_analise_balanco(df_balanco, PASTA_DADOS_BALANCO / "analise_balanco_dados.json")
-    (PASTA_DADOS_BALANCO / "status.json").write_text(
-        json.dumps(
-            {"ultima_execucao": datetime.now().isoformat(timespec="seconds"), "registros": len(df_balanco)},
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+        PASTA_DADOS_BALANCO.mkdir(parents=True, exist_ok=True)
+        _gerar_json_analise_balanco(df_balanco, PASTA_DADOS_BALANCO / "analise_balanco_dados.json")
+        (PASTA_DADOS_BALANCO / "status.json").write_text(
+            json.dumps(
+                {"ultima_execucao": datetime.now().isoformat(timespec="seconds"), "registros": len(df_balanco)},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
 
-    PASTA_DESTINO.mkdir(parents=True, exist_ok=True)
+        PASTA_DESTINO.mkdir(parents=True, exist_ok=True)
 
-    _log("Copiando dados do portal de cada fonte...")
-    _copiar(PASTA_DADOS_RADAR, "radar_fiscal_dados.json")
-    _copiar(PASTA_DADOS_RADAR, "status.json", "status_radar_fiscal.json")
-    _copiar(PASTA_DADOS_BALANCO, "analise_balanco_dados.json")
-    _copiar(PASTA_DADOS_BALANCO, "status.json", "status_analise_balanco.json")
+        _log("Copiando dados do portal de cada fonte...")
+        _copiar(PASTA_DADOS_RADAR, "radar_fiscal_dados.json")
+        _copiar(PASTA_DADOS_RADAR, "status.json", "status_radar_fiscal.json")
+        _copiar(PASTA_DADOS_BALANCO, "analise_balanco_dados.json")
+        _copiar(PASTA_DADOS_BALANCO, "status.json", "status_analise_balanco.json")
 
-    _log("Juntando os dois resumos num Excel único...")
-    df = pd.concat(
-        [_normalizar_radar_fiscal(df_radar), _normalizar_analise_balanco(df_balanco)],
-        ignore_index=True,
-    )
-    with pd.ExcelWriter(ARQUIVO_RESUMO, engine="xlsxwriter") as writer:
-        df.to_excel(writer, sheet_name="Resumo", index=False)
+        _log("Juntando os dois resumos num Excel único...")
+        df = pd.concat(
+            [_normalizar_radar_fiscal(df_radar), _normalizar_analise_balanco(df_balanco)],
+            ignore_index=True,
+        )
+        with pd.ExcelWriter(ARQUIVO_RESUMO, engine="xlsxwriter") as writer:
+            df.to_excel(writer, sheet_name="Resumo", index=False)
 
-    (PASTA_DESTINO / "status.json").write_text(
-        json.dumps(
-            {"ultima_execucao": datetime.now().isoformat(timespec="seconds"), "registros": len(df)},
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+        (PASTA_DESTINO / "status.json").write_text(
+            json.dumps(
+                {"ultima_execucao": datetime.now().isoformat(timespec="seconds"), "registros": len(df)},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
 
-    _log(f"Concluído: {len(df_radar)} Radar Fiscal + {len(df_balanco)} Análise de Balanço = {len(df)} registros.")
-    _log(f"Excel: {ARQUIVO_RESUMO}")
+        _log(f"Concluído: {len(df_radar)} Radar Fiscal + {len(df_balanco)} Análise de Balanço = {len(df)} registros.")
+        _log(f"Excel: {ARQUIVO_RESUMO}")
+    finally:
+        radar_fiscal._fechar_mgapps_se_existir(log)
+
     return df
 
 

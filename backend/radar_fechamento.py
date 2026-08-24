@@ -157,6 +157,23 @@ def _competencia_mes_anterior() -> tuple[int, int]:
     return ultimo_dia_mes_anterior.month, ultimo_dia_mes_anterior.year
 
 
+def _matar_processo_da_janela(hwnd: int, log=None):
+    """Encerra à força o processo dono da janela. `.close()` via UI
+    Automation não fecha esses apps de fato — visto ao vivo em 2026-08-24:
+    a janela 'Análise de Balanço' (e o MG Apps) continuavam abertos, só
+    'estacionados' fora da tela, mesmo com o `.close()` rodando sem erro
+    dentro do try/finally. Como esses processos existem só pra essa
+    automação (a próxima execução sempre fecha e reabre do zero, nunca
+    reaproveita), matar por PID é seguro."""
+    try:
+        _, pid = win32process.GetWindowThreadProcessId(hwnd)
+        handle_proc = win32api.OpenProcess(win32con.PROCESS_TERMINATE, False, pid)
+        win32api.TerminateProcess(handle_proc, 0)
+        win32api.CloseHandle(handle_proc)
+    except Exception as e:
+        _log(f"AVISO: não consegui encerrar o processo da janela ({e}).", log)
+
+
 def _fechar_analise_balanco_se_existir(log=None):
     """Fecha a janela 'Análise de Balanço' se já estiver aberta (execução
     anterior que não chegou a fechar, crash, ou o usuário abriu manualmente)
@@ -169,10 +186,7 @@ def _fechar_analise_balanco_se_existir(log=None):
     except TimeoutError:
         return
     _log("'Análise de Balanço' já estava aberto — fechando para começar do zero...", log)
-    try:
-        _conectar(handle).close()
-    except Exception:
-        pass
+    _matar_processo_da_janela(handle, log)
     time.sleep(1)
 
 
@@ -192,10 +206,7 @@ def _fechar_mgapps_se_existir(log=None):
     except TimeoutError:
         return
     _log("MGApps já estava aberto — fechando para começar do zero...", log)
-    try:
-        _conectar(handle).close()
-    except Exception:
-        pass
+    _matar_processo_da_janela(handle, log)
     time.sleep(1)
 
 
@@ -371,10 +382,7 @@ def executar(log=None) -> Path:
         return ARQUIVO_SAIDA
     finally:
         _log("Fechando 'Análise de Balanço'...", log)
-        try:
-            win.close()
-        except Exception:
-            pass
+        _matar_processo_da_janela(win.handle, log)
 
 
 if __name__ == "__main__":
