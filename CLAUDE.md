@@ -2,7 +2,14 @@
 
 ## O que é este projeto
 
-Portal único que junta o Radar Fiscal e a Análise de Balanço numa página só, com uma aba grande no topo pra alternar entre "Radar Fiscal" e "Análise de Balanço" — mesma ideia do projeto de Análise de Entrega de SPED (ICMS/Contribuições), aplicada aqui a duas fontes com robôs e esquemas de planilha totalmente diferentes (não só valores diferentes de um mesmo campo).
+Portal **"Controle de Fechamentos"** (nome de exibição — pasta/repo continuam `Relatorio-de-Fechamentos`) que junta o Radar Fiscal e a Análise de Balanço numa página só, com uma aba grande no topo pra alternar entre "Radar Fiscal" e "Análise de Balanço" — mesma ideia do projeto de Análise de Entrega de SPED (ICMS/Contribuições), aplicada aqui a duas fontes com robôs e esquemas de planilha totalmente diferentes (não só valores diferentes de um mesmo campo).
+
+**Navegação Unidade → Departamento/Segmento (2026-08-25), no mesmo padrão do Portal de Tarefas**: em vez do filtro de Unidade em chips + aba "Por Departamento" que existiam antes, a página agora tem 3 "telas" controladas por `escopo = { unidade, depto }` em `static/script.js`:
+1. **Painel de Unidades** (`escopo.unidade === null`): grid de cards, um por Unidade, no mesmo estilo visual dos cards de detalhamento (total + Documentação Recebida/Pendente). Clicar entra na Unidade.
+2. **Tela da Unidade** (`escopo.unidade` setado, `escopo.depto === null`): mostra **as 2 visões ao mesmo tempo** — o corpo inteiro do dashboard (Filtros, Por Tributação, Evolução, Ranking, Tabela) já é a visão **Consolidada** da unidade inteira, e logo acima aparece o grid de cards "Por Departamento" (Radar Fiscal) / "Por Segmento" (Análise de Balanço) pra detalhar.
+3. **Tela do Departamento/Segmento** (`escopo.depto` também setado): mesmo corpo do dashboard, recortado só pra aquele departamento/segmento dentro da unidade.
+
+Breadcrumb (`#navegacao-breadcrumb`) navega de volta a qualquer nível. Trocar de Tipo de Relatório (aba do topo) sempre volta pro Painel de Unidades. `dadosEscopo` (= `dadosTipo` recortado por `escopo`) é a base de tudo dentro do corpo do dashboard — os filtros de Unidade/Departamento que existiam nos cards "Filtros"/"Filtros da tabela" foram removidos (a navegação já cobre o que eles faziam).
 
 **Projeto autocontido (migrado em 2026-08-21)**: os robôs de automação (Radar Fiscal via MGApps; Radar de Fechamento + Retorno do Checklist + resumo via MGApps/Intranet) moram dentro deste projeto, em `backend/`. Antes viviam em dois repositórios separados (`Radar-Fiscal/` e `Analise-de-Balanco/`) e eram carregados por caminho — a pedido explícito do usuário ("eles não vão existir mais, somente o Relatório de Fechamentos"), o código foi migrado pra cá e os dois repositórios antigos foram **arquivados no GitHub** (somente leitura, código preservado, não apagados — reversível se precisar).
 
@@ -90,18 +97,28 @@ Radar Fiscal e Análise de Balanço têm nomes de coluna diferentes pra conceito
 | `Documentacao` | `Documentação` | `Documentação` |
 | `Departamento` | `DeptoFiscal` | *(não existe)* |
 | `DataReferencia` | `DataConfirmacao` | `DataImportacao` |
+| `DocumentoPendente` | `DocumentoPendente` (só frontend, ver abaixo) | *(não existe)* |
+
+`DocumentoPendente` só existe no frontend (não tem coluna equivalente no `resumo.xlsx`/Excel único) — vem da coluna `"DOC. PENDENTE CHECKLIST"` da Planilha de Mercados (só SP/GOIAS passam por ela, ver `UNIDADES_MERCADOS` em `radar_fiscal.py`), trazida pro JSON do portal já com esse nome (rename em `_gerar_json_portal`) e simplificada em `formatarDocumentoPendente()` (texto bruto tem uma linha por documento pendente com competência/prazo e um rodapé fixo "via API Integração MGC" — a função extrai só os nomes dos documentos, separados por vírgula).
 
 `Segmento` e `Documentação` já têm o mesmo nome e os mesmos 2 valores nas duas fontes — não precisam de mapeamento. **Atenção**: o Radar Fiscal usa `"Gerente de Contas"` (com espaço) no `resumo.xlsx`, e só vira `GerenteContas` no JSON do portal (rename feito dentro do próprio `radar_fiscal.py`, `_gerar_json_portal`) — `orquestrador.py` lê direto do `resumo.xlsx`/DataFrame retornado por `radar_fiscal.executar()`, então usa o nome com espaço.
 
 ### Tipo de Relatório (aba do topo) — igual ao padrão do SPED
-A página inteira (chips de Unidade, filtros, cards, ranking, evolução, tabela) sempre mostra só um Tipo de Relatório por vez (`tipoRelatorioAtivo`), escolhido em `#tipo-relatorio-abas`. Trocar de aba (`selecionarTipoRelatorio()`) reseta todos os filtros e repopula cada `<select>` só com os valores daquela fonte (`repopularSelect()`).
+A página inteira (navegação de Unidade/Departamento, filtros, cards, ranking, evolução, tabela) sempre mostra só um Tipo de Relatório por vez (`tipoRelatorioAtivo`), escolhido em `#tipo-relatorio-abas`. Trocar de aba (`selecionarTipoRelatorio()`) volta pro Painel de Unidades, reseta todos os filtros e repopula cada `<select>` só com os valores daquele escopo (`repopularSelect()`).
 
-Duas diferenças reais entre as fontes que a UI precisa esconder/adaptar ao trocar de aba:
-1. **Departamento só existe no Radar Fiscal.** Os grupos `#f-depto-grupo`/`#t-depto-grupo` recebem a classe `.oculto` quando o Tipo ativo é "Análise de Balanço" (não é só deixado vazio — some da tela). A coluna "Departamento" da tabela **fica sempre visível** (mostra "—" nas linhas da Análise de Balanço) — decisão consciente pra não arriscar desalinhar `<colgroup>`/`<td>` escondendo célula por célula (`display:none` num `<td>` isolado quebra a contagem de colunas do `table-layout: fixed`).
-2. **A 2ª aba de cards** é "Por Departamento" (Radar Fiscal, aninhado por Tributação, usa `el.depto`) ou "Por Segmento" (Análise de Balanço, aninhado por Tributação, usa o mesmo `el.segmento` do filtro geral). Config em `QUEBRA_CONFIG_POR_TIPO`; o rótulo do botão (`#quebra-aba-segunda`) é atualizado por `selecionarTipoRelatorio()`.
-3. **Os 5 valores reais de `Status`** são diferentes nas duas fontes, cada uma com uma categoria sem equivalente na outra (Radar Fiscal: "Bloqueado"; Análise de Balanço: "Importado Contábil") — por isso `STATUS_ORDEM_POR_TIPO` é por Tipo, não uma lista global única. `STATUS_ROTULOS_POR_TIPO` só ajusta a grafia da Análise de Balanço pra bater com o Radar Fiscal onde o significado é o mesmo (`"OK - Com GC"→"Com o GC"`, `"Não Importado"→"Não importado"`), também usada no filtro/rótulo de tabela (`rotuloStatus()`), não só nos cards.
+Diferenças reais entre as fontes que a UI precisa esconder/adaptar ao trocar de aba:
+1. **Departamento só existe no Radar Fiscal.** É a "2ª dimensão" de navegação (`QUEBRA_CONFIG_POR_TIPO[tipo].segunda`) — "Por Departamento" no Radar Fiscal, "Por Segmento" na Análise de Balanço (reaproveita a mesma coluna do filtro geral "Segmento"). A coluna "Departamento" da tabela **fica sempre visível** (mostra "—" nas linhas da Análise de Balanço) — decisão consciente pra não arriscar desalinhar `<colgroup>`/`<td>` escondendo célula por célula (`display:none` num `<td>` isolado quebra a contagem de colunas do `table-layout: fixed`).
+2. **Os 5 valores reais de `Status`** são diferentes nas duas fontes, cada uma com uma categoria sem equivalente na outra (Radar Fiscal: "Bloqueado"; Análise de Balanço: "Importado Contábil") — por isso `STATUS_ORDEM_POR_TIPO` é por Tipo, não uma lista global única. `STATUS_ROTULOS_POR_TIPO` só ajusta a grafia da Análise de Balanço pra bater com o Radar Fiscal onde o significado é o mesmo (`"OK - Com GC"→"Com o GC"`, `"Não Importado"→"Não importado"`), também usada no filtro/rótulo de tabela (`rotuloStatus()`), não só nos cards. O último item de cada lista em `STATUS_ORDEM_POR_TIPO` é sempre o equivalente a "não importado" — usado por `renderizarDocGrupo()` (ver regra de Documentação abaixo).
 
 O resto (ranking por Gerente, "Evolução Diária" por `DataReferencia`, tabela, cards "Por Tributação") é **código idêntico** pras duas fontes — só funciona porque os nomes já estão normalizados.
+
+### Documentação Pendente só deveria coexistir com Status "Não importado" (2026-08-25)
+Pedido do usuário: "todas as empresas [com documentação pendente] precisam estar com um status Não importado" — na prática, checando os dados reais, isso não era verdade (Status "Fechado" era o caso mais comum, mas "Simulando"/"Com o GC" também apareciam com documentação pendente — mais de 700 das 4190 linhas na calibração de 2026-08-24). Corrigido no **tratamento da base**, não só na exibição — qualquer linha com `Documentação == "Documentação Pendente"` e `Status` diferente do "não importado" daquela fonte é normalizada para `"Documentação Recebida"`:
+- Frontend: `corrigirDocumentacao()` em `static/script.js`, chamada de dentro de `normalizarRadarFiscal()`/`normalizarAnaliseBalanco()` (afeta a exibição do portal).
+- Backend: `_corrigir_documentacao_inconsistente()` em `backend/orquestrador.py`, chamada depois do `pd.concat()` dos dois normalizados (afeta o `resumo.xlsx`).
+- Os JSONs brutos (`radar_fiscal_dados.json`/`analise_balanco_dados.json`) **não** são alterados — continuam no schema bruto de cada fonte, como o resto da normalização (o frontend é quem corrige na hora de montar `dados`).
+
+Como consequência, `renderizarDocGrupo()` simplifica o card de "Documentação Pendente" pra mostrar só 1 linha de status (a "não importado" da fonte) em vez das 5 — as outras seriam sempre zero.
 
 ### `backend/orquestrador.py` — fluxo
 1. `_recarregar_credenciais()` — relê `.env`, sobrescreve `radar_fiscal.USUARIO`/`SENHA` e `retorno_checklist.USUARIO`/`SENHA`.
@@ -111,6 +128,9 @@ O resto (ranking por Gerente, "Evolução Diária" por `DataReferencia`, tabela,
 5. Copia os JSONs/status de `data/radar_fiscal/` e `data/analise_balanco/` pra `data/relatorio_fechamentos/`.
 6. Junta os dois (normalizados) num `resumo.xlsx` único.
 7. Escreve `status.json` combinado.
+
+### Cards totalizadores clicáveis ("tabela dinâmica", 2026-08-25)
+Todo card/linha que mostra uma contagem (quebra-card "Por Tributação", doc-grupo "Documentação Recebida/Pendente" dentro dele, cada linha de Status dentro do doc-grupo, e cada linha do ranking por Gerente) é clicável e mostra os clientes daquele valor **na tabela logo abaixo** — não só nos KPIs/cards, que era o comportamento antigo. `alternarFiltroEMostrarTabela(campo, valor)` sincroniza o filtro geral (que antes só afetava cards/ranking/evolução) com o filtro correspondente da tabela (`CAMPO_PARA_FILTROS`), reaplica os dois e rola a tela até `#tabela-secao`. `ativarCliqueDetalhado()` liga os cliques dos níveis "de dentro" de um card (doc-grupo/status-linha) depois do `innerHTML` ser inserido, com `stopPropagation()` pra não disparar também o card externo. Os cards de navegação (Unidade/Departamento) **não** usam esse mecanismo — o clique neles navega pra outra tela (ver seção de Navegação no topo), que já mostra a tabela filtrada por aquele escopo.
 
 ### Como rodar
 ```

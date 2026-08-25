@@ -79,18 +79,22 @@ MAPA_GERENTES = {
     "MAICON COSTA": "Maicon Costa",
     "BRUNO MOTA": "Bruno Mota",
 }
-# Colunas da Planilha de Mercados trazidas para o resumo (mesmas 6 da consulta
-# original), renomeadas com o prefixo "Planilha de Mercados." como no Power Query.
+# Colunas da Planilha de Mercados trazidas para o resumo (as 6 da consulta
+# original + "DOC. PENDENTE CHECKLIST", pedida depois pro portal mostrar o
+# documento pendente de cada empresa), renomeadas com o prefixo "Planilha de
+# Mercados." como no Power Query.
 COLUNAS_MERCADOS_TRAZIDAS = [
     "ÍA", "DESC. REMESSAS", "Data Comentário Operação",
     "EFV ATUAL Data", "AÇÃO GERENTE", "Data Comentário Gerência",
+    "DOC. PENDENTE CHECKLIST",
 ]
 
 COLUNAS_PORTAL = [
     "IdCorporativo", "Nome", "Grupo", "Unidade", "Segmento", "Gerente de Contas",
     "Status", "DeptoFiscal", "RegimeApuracao", "EmpSemMovto",
     "Documentação", "DiasSemAtualizacao", "Planilha de Mercados.AÇÃO GERENTE",
-    "Planilha de Mercados.DESC. REMESSAS", "DataConfirmacao",
+    "Planilha de Mercados.DESC. REMESSAS", "Planilha de Mercados.DOC. PENDENTE CHECKLIST",
+    "DataConfirmacao",
 ]
 
 USUARIO = os.getenv("USUARIO", "")
@@ -621,6 +625,7 @@ def _processar_resumo(df_radar: pd.DataFrame, df_mercados: pd.DataFrame, log=Non
         "Planilha de Mercados.EFV ATUAL Data",
         "Planilha de Mercados.AÇÃO GERENTE",
         "Planilha de Mercados.Data Comentário Gerência",
+        "Planilha de Mercados.DOC. PENDENTE CHECKLIST",
     ]
     return resumo[ordem]
 
@@ -661,6 +666,7 @@ def _gerar_json_portal(df: pd.DataFrame) -> None:
         "Gerente de Contas": "GerenteContas",
         "Planilha de Mercados.AÇÃO GERENTE": "AcaoGerente",
         "Planilha de Mercados.DESC. REMESSAS": "DescRemessas",
+        "Planilha de Mercados.DOC. PENDENTE CHECKLIST": "DocumentoPendente",
     })
     registros = subset.to_dict(orient="records")
 

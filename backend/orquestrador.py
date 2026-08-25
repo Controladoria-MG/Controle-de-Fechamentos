@@ -120,6 +120,36 @@ def _normalizar_analise_balanco(df: pd.DataFrame) -> pd.DataFrame:
     })
 
 
+# Único Status "de verdade" compatível com Documentação Pendente — pedido do
+# usuário (2026-08-25): "todas as empresas [com documentação pendente]
+# precisam estar com status Não importado". É por Tipo de Relatório porque a
+# grafia da fonte é diferente ("Não importado" no Radar Fiscal, "Não
+# Importado" na Análise de Balanço — mesma diferença de STATUS_ORDEM_POR_TIPO
+# em static/script.js).
+STATUS_NAO_IMPORTADO_POR_TIPO = {
+    "Radar Fiscal": "Não importado",
+    "Análise de Balanço": "Não Importado",
+}
+
+
+def _corrigir_documentacao_inconsistente(df: pd.DataFrame) -> pd.DataFrame:
+    """O usuário só citou o caso "Fechado" como exemplo, mas checando os dados
+    reais (resumo.xlsx de 2026-08-24) qualquer Status diferente de "Não
+    importado" aparece às vezes com documentação pendente (Fechado: 600
+    linhas; Com o GC/Simulando: mais 145) — pra cumprir a regra geral que ele
+    pediu ("todas... com status Não importado"), tratamos qualquer uma dessas
+    combinações como inconsistência de dados e normalizamos para
+    "Documentação Recebida". Mesma regra replicada em
+    static/script.js::corrigirDocumentacao() pro portal — lá o schema já
+    normalizado usa a coluna "Documentacao" (sem cedilha/til), aqui ainda é
+    "Documentação" (schema normalizado deste módulo)."""
+    pendente = df["Documentação"] == "Documentação Pendente"
+    status_esperado = df["TipoRelatorio"].map(STATUS_NAO_IMPORTADO_POR_TIPO)
+    inconsistente = pendente & (df["Status"] != status_esperado)
+    df.loc[inconsistente, "Documentação"] = "Documentação Recebida"
+    return df
+
+
 def _recarregar_credenciais(log):
     # python-dotenv não sobrescreve variáveis de ambiente já setadas
     # (override=False) — se este orquestrador rodar dentro de um processo
@@ -201,6 +231,7 @@ def executar(log=None) -> pd.DataFrame:
             [_normalizar_radar_fiscal(df_radar), _normalizar_analise_balanco(df_balanco)],
             ignore_index=True,
         )
+        df = _corrigir_documentacao_inconsistente(df)
         with pd.ExcelWriter(ARQUIVO_RESUMO, engine="xlsxwriter") as writer:
             df.to_excel(writer, sheet_name="Resumo", index=False)
 

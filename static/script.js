@@ -6,9 +6,18 @@
 // página inteira (filtros, cards, ranking, evolução, tabela) sempre mostra
 // só um Tipo de Relatório por vez, escolhido na aba do topo — igual ao
 // padrão do SPED.
+//
+// Navegação (Unidade -> Departamento/Segmento) segue o mesmo padrão de
+// telas do Portal de Tarefas: escolher o card da Unidade abre a tela da
+// Unidade (visão Consolidada da unidade inteira + cards de Departamento/
+// Segmento pra detalhar); escolher um desses cards abre a tela do
+// Departamento (mesmo corpo do dashboard, mais restrito). `escopo` guarda
+// esse estado de navegação; `dadosEscopo` é `dadosTipo` já recortado por ele.
 let dados = [];
 let dadosTipo = [];
+let dadosEscopo = [];
 let tipoRelatorioAtivo = null;
+let escopo = { unidade: null, depto: null };
 let filtrados = [];
 let filtradosTabela = [];
 
@@ -16,17 +25,18 @@ const el = {
   status: document.getElementById("status-execucao"),
   statusRodape: document.getElementById("status-execucao-rodape"),
   tipoRelatorioAbas: document.getElementById("tipo-relatorio-abas"),
+  breadcrumbBar: document.getElementById("navegacao-breadcrumb"),
+  breadcrumbCrumbs: document.getElementById("breadcrumb-crumbs"),
+  secaoUnidades: document.getElementById("secao-unidades"),
+  unidadesGrid: document.getElementById("unidades-grid"),
+  secaoDepartamentos: document.getElementById("secao-departamentos"),
+  departamentosGridTitulo: document.getElementById("departamentos-grid-titulo"),
+  departamentosGrid: document.getElementById("departamentos-grid"),
+  corpoDashboard: document.getElementById("corpo-dashboard"),
+  tabelaSecao: document.getElementById("tabela-secao"),
   busca: document.getElementById("f-busca"),
-  // Não é um <select> — é um estado simples com um Set de valores (permite
-  // marcar mais de uma unidade ao mesmo tempo). filtrarConjunto trata esse
-  // campo de forma diferente do resto (ver `.valores` lá). Os botões ficam
-  // soltos no topo da página (unidadeTopoLista).
-  unidade: { valores: new Set() },
-  unidadeTopoLista: document.getElementById("unidade-topo-lista"),
   segmento: document.getElementById("f-segmento"),
   regime: document.getElementById("f-regime"),
-  depto: document.getElementById("f-depto"),
-  deptoGrupo: document.getElementById("f-depto-grupo"),
   status_: document.getElementById("f-status"),
   documentacao: document.getElementById("f-documentacao"),
   gerente: document.getElementById("f-gerente"),
@@ -34,17 +44,12 @@ const el = {
   corpo: document.getElementById("tabela-corpo"),
   contagem: document.getElementById("contagem"),
   quebraConteudo: document.getElementById("quebra-conteudo"),
-  quebraAbas: document.querySelectorAll("#quebra-abas-dimensao .quebra-aba"),
-  quebraAbaSegunda: document.getElementById("quebra-aba-segunda"),
   rankingGerentes: document.getElementById("ranking-gerentes"),
   evolucaoGrafico: document.getElementById("evolucao-grafico"),
-  // Filtro independente, só da tabela — não afeta KPIs/cards/ranking
+  // Filtro independente, só da tabela — não afeta cards/ranking/evolução.
   tBusca: document.getElementById("t-busca"),
-  tUnidade: document.getElementById("t-unidade"),
   tSegmento: document.getElementById("t-segmento"),
   tRegime: document.getElementById("t-regime"),
-  tDepto: document.getElementById("t-depto"),
-  tDeptoGrupo: document.getElementById("t-depto-grupo"),
   tStatus: document.getElementById("t-status"),
   tDocumentacao: document.getElementById("t-documentacao"),
   tGerente: document.getElementById("t-gerente"),
@@ -60,6 +65,37 @@ const el = {
 // trabalhe só com os nomes comuns, sem `if (tipo === ...)` espalhado pelo
 // código. `Segmento` e `Documentação` já têm o mesmo nome/valores nas duas
 // fontes — não precisam de mapeamento.
+
+// Pedido do usuário (2026-08-25): "todas as empresas [com documentação
+// pendente] precisam estar com status Não importado". Ele só citou o caso
+// "Fechado" como exemplo, mas nos dados reais qualquer Status diferente do
+// "não importado" da fonte às vezes aparece com documentação pendente
+// (Fechado é o mais comum, mas Simulando/Com o GC também acontecem) — pra
+// cumprir a regra geral, tratamos qualquer uma dessas combinações como
+// inconsistência de dados e normalizamos para "Documentação Recebida".
+// Mesma regra replicada em
+// backend/orquestrador.py::_corrigir_documentacao_inconsistente pro Excel.
+function corrigirDocumentacao(status, documentacao, statusNaoImportado) {
+  if (documentacao === "Documentação Pendente" && status !== statusNaoImportado) return "Documentação Recebida";
+  return documentacao;
+}
+
+// A "Planilha de Mercados" traz, por empresa, um texto de várias linhas com
+// os documentos pendentes no checklist (uma linha por documento, com
+// competência/prazo e um rodapé fixo "via API Integração MGC"). Aqui a
+// gente simplifica pra só os nomes dos documentos, num texto compacto —
+// só existe pro Radar Fiscal (só SP/GOIAS passam pela Planilha de Mercados).
+function formatarDocumentoPendente(texto) {
+  if (!texto) return null;
+  const itens = texto
+    .split("\n")
+    .map((linha) => linha.trim())
+    .filter((linha) => linha && !/^via /i.test(linha))
+    .map((linha) => linha.split("(")[0].trim())
+    .filter(Boolean);
+  return itens.length ? itens.join(", ") : null;
+}
+
 function normalizarRadarFiscal(r) {
   return {
     Id: r.IdCorporativo,
@@ -70,9 +106,10 @@ function normalizarRadarFiscal(r) {
     Gerente: r.GerenteContas,
     Tributacao: r.RegimeApuracao,
     Status: r.Status,
-    Documentacao: r["Documentação"],
+    Documentacao: corrigirDocumentacao(r.Status, r["Documentação"], "Não importado"),
     Departamento: r.DeptoFiscal,
     DataReferencia: r.DataConfirmacao,
+    DocumentoPendente: formatarDocumentoPendente(r.DocumentoPendente),
     TipoRelatorio: "Radar Fiscal",
   };
 }
@@ -87,9 +124,10 @@ function normalizarAnaliseBalanco(r) {
     Gerente: r.Gerente,
     Tributacao: r.Tributacao,
     Status: r.Status,
-    Documentacao: r["Documentação"],
+    Documentacao: corrigirDocumentacao(r.Status, r["Documentação"], "Não Importado"),
     Departamento: undefined,
     DataReferencia: r.DataImportacao,
+    DocumentoPendente: undefined,
     TipoRelatorio: "Análise de Balanço",
   };
 }
@@ -108,8 +146,8 @@ function popularSelect(select, valores, formatar = (v) => v) {
 
 // Igual a popularSelect, mas limpa as opções antigas primeiro (mantendo só
 // o placeholder "Todos"/"Todas", sempre a primeira <option>) — usado ao
-// trocar de Tipo de Relatório, já que os valores possíveis de cada filtro
-// mudam de uma fonte pra outra.
+// trocar de Tipo de Relatório/Unidade/Departamento, já que os valores
+// possíveis de cada filtro mudam de um escopo pro outro.
 function repopularSelect(select, valores, formatar = (v) => v) {
   const placeholder = select.options[0];
   select.innerHTML = "";
@@ -119,27 +157,15 @@ function repopularSelect(select, valores, formatar = (v) => v) {
 
 function filtrarConjunto(conjunto, campos) {
   const busca = campos.busca.value.trim().toLowerCase();
-  // Unidade aceita dois formatos: um <select> normal (.value, string única
-  // — usado no filtro da tabela) ou o estado multi-seleção dos chips do
-  // topo (.valores, Set — vazio = "Todas").
-  const unidadeValores = campos.unidade.valores;
-  const unidadeUnica = campos.unidade.value;
   const segmento = campos.segmento.value;
   const regime = campos.regime.value;
-  const depto = campos.depto.value;
   const status = campos.status.value;
   const documentacao = campos.documentacao.value;
   const gerente = campos.gerente.value;
 
   return conjunto.filter((r) => {
-    if (unidadeValores) {
-      if (unidadeValores.size > 0 && !unidadeValores.has(r.Unidade)) return false;
-    } else if (unidadeUnica && r.Unidade !== unidadeUnica) {
-      return false;
-    }
     if (segmento && r.Segmento !== segmento) return false;
     if (regime && r.Tributacao !== regime) return false;
-    if (depto && r.Departamento !== depto) return false;
     if (gerente && r.Gerente !== gerente) return false;
     if (status && r.Status !== status) return false;
     if (documentacao && r.Documentacao !== documentacao) return false;
@@ -152,60 +178,20 @@ function filtrarConjunto(conjunto, campos) {
 }
 
 function aplicarFiltros() {
-  filtrados = filtrarConjunto(dadosTipo, {
-    busca: el.busca, unidade: el.unidade, segmento: el.segmento, regime: el.regime,
-    depto: el.depto, status: el.status_, documentacao: el.documentacao, gerente: el.gerente,
+  filtrados = filtrarConjunto(dadosEscopo, {
+    busca: el.busca, segmento: el.segmento, regime: el.regime,
+    status: el.status_, documentacao: el.documentacao, gerente: el.gerente,
   });
 
   renderizarQuebras();
   renderizarRankingGerentes();
   renderizarEvolucao();
-  atualizarUnidadeTopoAtiva();
-}
-
-function renderizarUnidadeTopo() {
-  const unidades = [...new Set(dadosTipo.map((r) => r.Unidade).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
-  el.unidadeTopoLista.innerHTML = [`<button type="button" class="unidade-topo-chip" data-valor="">Todas</button>`]
-    .concat(
-      unidades.map((u) => `<button type="button" class="unidade-topo-chip" data-valor="${u.replace(/"/g, "&quot;")}">${u.toUpperCase()}</button>`)
-    )
-    .join("");
-  ativarFiltroUnidadeMultiplo();
-  atualizarUnidadeTopoAtiva();
-}
-
-// Diferente de ativarFiltroClicavel (usado por Tributação/Departamento-ou-
-// Segmento/Gerente, que são single-select): aqui cada clique liga/desliga
-// aquela unidade sem desmarcar as outras, permitindo comparar várias de uma
-// vez. "Todas" é um caso especial que limpa a seleção inteira.
-function ativarFiltroUnidadeMultiplo() {
-  el.unidadeTopoLista.querySelectorAll(".unidade-topo-chip").forEach((botao) => {
-    botao.addEventListener("click", () => {
-      const valor = botao.dataset.valor;
-      if (valor === "") {
-        el.unidade.valores.clear();
-      } else if (el.unidade.valores.has(valor)) {
-        el.unidade.valores.delete(valor);
-      } else {
-        el.unidade.valores.add(valor);
-      }
-      aplicarFiltros();
-    });
-  });
-}
-
-function atualizarUnidadeTopoAtiva() {
-  el.unidadeTopoLista.querySelectorAll(".unidade-topo-chip").forEach((botao) => {
-    const valor = botao.dataset.valor;
-    const ativo = valor === "" ? el.unidade.valores.size === 0 : el.unidade.valores.has(valor);
-    botao.classList.toggle("ativo", ativo);
-  });
 }
 
 function aplicarFiltroTabela() {
-  filtradosTabela = filtrarConjunto(dadosTipo, {
-    busca: el.tBusca, unidade: el.tUnidade, segmento: el.tSegmento, regime: el.tRegime,
-    depto: el.tDepto, status: el.tStatus, documentacao: el.tDocumentacao, gerente: el.tGerente,
+  filtradosTabela = filtrarConjunto(dadosEscopo, {
+    busca: el.tBusca, segmento: el.tSegmento, regime: el.tRegime,
+    status: el.tStatus, documentacao: el.tDocumentacao, gerente: el.tGerente,
   });
   renderizarTabela();
 }
@@ -215,7 +201,10 @@ const ORDEM_DOCUMENTACAO = ["Documentação Recebida", "Documentação Pendente"
 // uma tem uma categoria sem equivalente na outra (Radar Fiscal: "Bloqueado";
 // Análise de Balanço: "Importado Contábil"). Por isso a ordem/lista é por
 // Tipo de Relatório, não global — um card do Radar Fiscal nunca mostra uma
-// linha fixa de "Importado Contábil: 0" que não faz sentido pra ele.
+// linha fixa de "Importado Contábil: 0" que não faz sentido pra ele. O
+// último item de cada lista é sempre o equivalente a "não importado" —
+// usado por renderizarDocGrupo pra simplificar o card de Documentação
+// Pendente (ver ali).
 const STATUS_ORDEM_POR_TIPO = {
   "Radar Fiscal": ["Fechado", "Bloqueado", "Simulando", "Com o GC", "Não importado"],
   "Análise de Balanço": ["Fechado", "Importado Contábil", "Simulando", "OK - Com GC", "Não Importado"],
@@ -249,9 +238,9 @@ function criarContadorDocs() {
   return docs;
 }
 
-function contarDetalhado(chave) {
+function contarDetalhado(rows, chave) {
   const grupos = new Map();
-  filtrados.forEach((r) => {
+  rows.forEach((r) => {
     const valor = r[chave];
     if (!valor) return;
     if (!grupos.has(valor)) grupos.set(valor, { total: 0, docs: criarContadorDocs() });
@@ -273,29 +262,72 @@ function formatarPct(n) {
   return `${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 }
 
-function ativarFiltroClicavel(elementos, filtroEl) {
-  elementos.forEach((el2) => {
-    el2.addEventListener("click", () => {
-      const valor = el2.dataset.valor;
-      filtroEl.value = filtroEl.value === valor ? "" : valor;
-      aplicarFiltros();
+// ── Cards totalizadores clicáveis ("tabela dinâmica") ───────────────────
+// Cada dimensão mostrada nos cards (Tributação, Documentação, Status,
+// Gerente) pode ser clicada pra filtrar a tabela pelos clientes daquele
+// valor — sincroniza o filtro geral (que já alimentava só os KPIs/cards)
+// com o filtro correspondente da tabela e rola a tela até ela.
+const CAMPO_PARA_FILTROS = {
+  Segmento: () => [el.segmento, el.tSegmento],
+  Tributacao: () => [el.regime, el.tRegime],
+  Status: () => [el.status_, el.tStatus],
+  Documentacao: () => [el.documentacao, el.tDocumentacao],
+  Gerente: () => [el.gerente, el.tGerente],
+};
+
+function alternarFiltroEMostrarTabela(campo, valor) {
+  const [geralEl, tabelaEl] = CAMPO_PARA_FILTROS[campo]();
+  const novoValor = geralEl.value === valor ? "" : valor;
+  geralEl.value = novoValor;
+  tabelaEl.value = novoValor;
+  aplicarFiltros();
+  aplicarFiltroTabela();
+  el.tabelaSecao.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// Liga os cliques nos níveis "de dentro" de um card (doc-grupo e cada
+// linha de status) depois que o HTML já foi inserido no DOM — mesmo
+// padrão usado pela "Fixar" da versão anterior. stopPropagation() evita
+// que o clique também dispare o card externo (quebra-card), que filtra
+// por outra dimensão (Tributação).
+function ativarCliqueDetalhado(container) {
+  container.querySelectorAll(".doc-grupo-clicavel").forEach((elDoc) => {
+    elDoc.addEventListener("click", (e) => {
+      e.stopPropagation();
+      alternarFiltroEMostrarTabela("Documentacao", elDoc.dataset.valor);
+    });
+  });
+  container.querySelectorAll(".status-linha-clicavel").forEach((elStatus) => {
+    elStatus.addEventListener("click", (e) => {
+      e.stopPropagation();
+      alternarFiltroEMostrarTabela("Status", elStatus.dataset.valor);
     });
   });
 }
 
-function renderizarDocGrupo(docNome, d, totalCategoria) {
+// clicavel=false é usado pelos cards de navegação (Unidade/Departamento) —
+// ali o clique inteiro do card já navega pra outra tela, então o
+// doc-grupo/status-linha não precisam de handler próprio.
+function renderizarDocGrupo(docNome, d, totalCategoria, clicavel = false) {
   const classe = docNome === "Documentação Recebida" ? "recebida" : "pendente";
   const pctDoc = totalCategoria ? (d.total / totalCategoria) * 100 : 0;
-  // Ordem fixa (não por contagem) pra todo card mostrar as mesmas linhas na
-  // mesma posição — mesmo as zeradas.
-  const statusOrdenado = statusOrdem().map((s) => [s, d.status.get(s) || 0]);
+  const chaveNaoImportado = statusOrdem()[statusOrdem().length - 1];
+  // Documentação Pendente: depois da correção em corrigirDocumentacao()
+  // (Fechado + Pendente vira Recebida), a única situação que sobra de
+  // verdade é "Não importado" — listar os outros 4 status aqui seria
+  // sempre zero e irrelevante, por isso mostra só essa linha.
+  const statusOrdenado = classe === "pendente"
+    ? [[chaveNaoImportado, d.status.get(chaveNaoImportado) || 0]]
+    : statusOrdem().filter((s) => s !== chaveNaoImportado).map((s) => [s, d.status.get(s) || 0]);
 
   const linhasStatus = statusOrdenado
     .map(([status, count]) => {
       const pctStatus = totalCategoria ? (count / totalCategoria) * 100 : 0;
       const rotulo = rotuloStatus(status);
+      const classeLinha = clicavel ? "status-linha status-linha-clicavel" : "status-linha";
+      const dataValor = clicavel ? ` data-valor="${status.replace(/"/g, "&quot;")}"` : "";
       return `
-        <div class="status-linha">
+        <div class="${classeLinha}"${dataValor}>
           <span class="status-nome" title="${rotulo}">${rotulo}</span>
           <span class="status-valores"><b>${count.toLocaleString("pt-BR")}</b><span class="status-pct">${formatarPct(pctStatus)}</span></span>
         </div>
@@ -303,8 +335,11 @@ function renderizarDocGrupo(docNome, d, totalCategoria) {
     })
     .join("");
 
+  const classeDoc = clicavel ? `doc-grupo ${classe} doc-grupo-clicavel` : `doc-grupo ${classe}`;
+  const dataValorDoc = clicavel ? ` data-valor="${docNome.replace(/"/g, "&quot;")}"` : "";
+
   return `
-    <div class="doc-grupo ${classe}">
+    <div class="${classeDoc}"${dataValorDoc}>
       <div class="doc-cabecalho">
         <span class="doc-rotulo"><i class="ponto ${classe}"></i>${docNome}</span>
         <span class="doc-valores"><b>${d.total.toLocaleString("pt-BR")}</b><span class="doc-pct">${formatarPct(pctDoc)}</span></span>
@@ -314,18 +349,51 @@ function renderizarDocGrupo(docNome, d, totalCategoria) {
   `;
 }
 
-function renderizarQuebraGrupo(container, chave, filtroEl) {
-  const grupos = contarDetalhado(chave);
+// ── Cards de navegação (telas de Unidade e de Departamento/Segmento) ────
+// Reaproveita a mesma aparência dos quebra-card (com o detalhamento de
+// Documentação já pronto em renderizarDocGrupo), só que o clique no card
+// inteiro navega pra outra tela em vez de filtrar.
+function renderizarCardsNavegacao(container, rows, chave, aoClicar, mensagemVazio, formatarNome = (v) => v) {
+  const grupos = contarDetalhado(rows, chave);
+  if (!grupos.length) {
+    container.innerHTML = `<p class="evolucao-vazio">${mensagemVazio}</p>`;
+    return;
+  }
+  container.innerHTML = grupos
+    .map(([nome, g]) => {
+      const docsHtml = ORDEM_DOCUMENTACAO
+        .map((docNome) => renderizarDocGrupo(docNome, g.docs.get(docNome), g.total, false))
+        .join("");
+      return `
+        <div class="quebra-card nav-card" data-valor="${nome.replace(/"/g, "&quot;")}" title="${nome}">
+          <div class="quebra-cabecalho">
+            <div class="quebra-nome">${formatarNome(nome)}</div>
+            <div class="quebra-total-num">${g.total.toLocaleString("pt-BR")}</div>
+          </div>
+          <div class="quebra-docs">${docsHtml}</div>
+          <div class="nav-card-footer">Clique para ver os detalhes</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  container.querySelectorAll(".nav-card").forEach((cardEl) => {
+    cardEl.addEventListener("click", () => aoClicar(cardEl.dataset.valor));
+  });
+}
+
+function renderizarQuebraGrupo(container, campo, filtroEl) {
+  const grupos = contarDetalhado(filtrados, campo);
   const selecionado = filtroEl.value;
   container.innerHTML = grupos
     .map(([nome, g]) => {
       const ativo = nome === selecionado ? " selecionado" : "";
       const docsHtml = ORDEM_DOCUMENTACAO
-        .map((docNome) => renderizarDocGrupo(docNome, g.docs.get(docNome), g.total))
+        .map((docNome) => renderizarDocGrupo(docNome, g.docs.get(docNome), g.total, true))
         .join("");
 
       return `
-        <div class="quebra-card${ativo}" data-valor="${nome.replace(/"/g, "&quot;")}" title="${nome}">
+        <div class="quebra-card${ativo}" data-campo="${campo}" data-valor="${nome.replace(/"/g, "&quot;")}" title="${nome}">
           <div class="quebra-cabecalho">
             <div class="quebra-nome">${nome}</div>
             <div class="quebra-total-num">${g.total.toLocaleString("pt-BR")}</div>
@@ -336,161 +404,15 @@ function renderizarQuebraGrupo(container, chave, filtroEl) {
     })
     .join("");
 
-  ativarFiltroClicavel(container.querySelectorAll(".quebra-card"), filtroEl);
-}
-
-function contarDetalhadoComSubgrupo(chavePrincipal, chaveSecundaria) {
-  const grupos = new Map();
-  filtrados.forEach((r) => {
-    const valor1 = r[chavePrincipal];
-    if (!valor1) return;
-    if (!grupos.has(valor1)) grupos.set(valor1, { total: 0, sub: new Map() });
-    const g = grupos.get(valor1);
-    g.total++;
-
-    const valor2 = r[chaveSecundaria] || "Sem tributação";
-    if (!g.sub.has(valor2)) g.sub.set(valor2, { total: 0, docs: criarContadorDocs() });
-    const s = g.sub.get(valor2);
-    s.total++;
-
-    const doc = r.Documentacao || "Sem documentação";
-    if (!s.docs.has(doc)) s.docs.set(doc, criarContadorStatus());
-    const d = s.docs.get(doc);
-    d.total++;
-
-    const status = r.Status || "Não importado";
-    d.status.set(status, (d.status.get(status) || 0) + 1);
+  container.querySelectorAll(".quebra-card").forEach((cardEl) => {
+    cardEl.addEventListener("click", () => alternarFiltroEMostrarTabela(cardEl.dataset.campo, cardEl.dataset.valor));
   });
-  return [...grupos.entries()].sort((a, b) => b[1].total - a[1].total);
+  ativarCliqueDetalhado(container);
 }
-
-function renderizarRegimeCard(nome, s, selecionado) {
-  const ativo = nome === selecionado ? " selecionado" : "";
-  const docsHtml = ORDEM_DOCUMENTACAO
-    .map((docNome) => renderizarDocGrupo(docNome, s.docs.get(docNome), s.total))
-    .join("");
-
-  return `
-    <div class="regime-card${ativo}" data-valor="${nome.replace(/"/g, "&quot;")}" title="${nome}">
-      <div class="regime-card-cabecalho">
-        <div class="regime-card-nome">${nome}</div>
-        <div class="regime-card-total">${s.total.toLocaleString("pt-BR")}</div>
-      </div>
-      <div class="quebra-docs">${docsHtml}</div>
-    </div>
-  `;
-}
-
-const faixasAbertas = new Set();
-
-// Clicar no cabeçalho da 2ª dimensão (Departamento no Radar Fiscal, Segmento
-// na Análise de Balanço) só expande/recolhe (não filtra) — pra filtrar, usa
-// o botão "Fixar". Card de Tributação dentro continua filtrando (el.regime)
-// num clique direto, igual antes.
-function renderizarFaixaSegunda(container, chavePrincipal, chaveSecundaria, filtroPrincipal, filtroSecundario) {
-  const grupos = contarDetalhadoComSubgrupo(chavePrincipal, chaveSecundaria);
-  const selecionado = filtroPrincipal.value;
-  const selecionadoSub = filtroSecundario.value;
-  container.innerHTML = grupos
-    .map(([nome, g]) => {
-      const ativo = nome === selecionado ? " selecionado" : "";
-      const aberto = faixasAbertas.has(nome);
-      const cardsHtml = [...g.sub.entries()]
-        .sort((a, b) => b[1].total - a[1].total)
-        .map(([subNome, s]) => renderizarRegimeCard(subNome, s, selecionadoSub))
-        .join("");
-
-      return `
-        <div class="quebra-faixa${aberto ? "" : " colapsado"}${ativo}" title="${nome}">
-          <div class="quebra-faixa-cabecalho" data-valor="${nome.replace(/"/g, "&quot;")}">
-            <button type="button" class="quebra-faixa-toggle" aria-label="Mostrar detalhe" aria-expanded="${aberto}"><i class="seta"></i></button>
-            <div class="quebra-nome">${nome}</div>
-            <div class="quebra-total-num">${g.total.toLocaleString("pt-BR")}</div>
-            <button type="button" class="quebra-faixa-fixar${ativo ? " fixado" : ""}" aria-label="${ativo ? "Remover filtro" : "Filtrar por este item"}" title="${ativo ? "Remover filtro" : "Fixar filtro"}">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M14.5 2.5a1 1 0 0 1 1.42 0l5.58 5.58a1 1 0 0 1 0 1.42l-1.3 1.3a1 1 0 0 1-1.3.1l-.5-.36-3.02 3.02.6 2.98a1 1 0 0 1-.27.92l-1.1 1.1a1 1 0 0 1-1.42 0l-3.4-3.4-5.02 5.02a1 1 0 0 1-1.42-1.42l5.02-5.02-3.4-3.4a1 1 0 0 1 0-1.42l1.1-1.1a1 1 0 0 1 .92-.27l2.98.6 3.02-3.02-.36-.5a1 1 0 0 1 .1-1.3z"/></svg>
-            </button>
-          </div>
-          <div class="regime-cards">${cardsHtml}</div>
-        </div>
-      `;
-    })
-    .join("");
-
-  function alternarAberto(cabecalho) {
-    const faixa = cabecalho.closest(".quebra-faixa");
-    const botaoToggle = cabecalho.querySelector(".quebra-faixa-toggle");
-    const colapsado = faixa.classList.toggle("colapsado");
-    const nome = cabecalho.dataset.valor;
-    if (colapsado) faixasAbertas.delete(nome); else faixasAbertas.add(nome);
-    botaoToggle.setAttribute("aria-expanded", String(!colapsado));
-    botaoToggle.setAttribute("aria-label", colapsado ? "Mostrar detalhe" : "Ocultar detalhe");
-  }
-
-  container.querySelectorAll(".quebra-faixa-toggle").forEach((botao) => {
-    botao.addEventListener("click", (e) => {
-      e.stopPropagation();
-      alternarAberto(botao.closest(".quebra-faixa-cabecalho"));
-    });
-  });
-
-  container.querySelectorAll(".quebra-faixa-cabecalho").forEach((cabecalho) => {
-    cabecalho.addEventListener("click", (e) => {
-      if (e.target.closest(".quebra-faixa-fixar")) return;
-      alternarAberto(cabecalho);
-    });
-  });
-
-  container.querySelectorAll(".quebra-faixa-fixar").forEach((botao) => {
-    botao.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const valor = botao.closest(".quebra-faixa-cabecalho").dataset.valor;
-      filtroPrincipal.value = filtroPrincipal.value === valor ? "" : valor;
-      aplicarFiltros();
-    });
-  });
-
-  ativarFiltroClicavel(container.querySelectorAll(".regime-card"), filtroSecundario);
-}
-
-// A 2ª aba de cards é "Por Departamento" no Radar Fiscal e "Por Segmento" na
-// Análise de Balanço (esta não tem coluna de departamento) — mesmo papel
-// estrutural, fonte de dado diferente. O rótulo da aba (#quebra-aba-segunda)
-// e o filtro que ela usa (el.depto vs el.segmento — este último é o mesmo
-// <select> do filtro geral "Segmento") trocam ao selecionar o Tipo de
-// Relatório, ver selecionarTipoRelatorio().
-const QUEBRA_CONFIG_POR_TIPO = {
-  "Radar Fiscal": {
-    regime: { chave: "Tributacao", filtroEl: () => el.regime },
-    segunda: { chave: "Departamento", subChave: "Tributacao", filtroEl: () => el.depto, subFiltroEl: () => el.regime, label: "Por Departamento" },
-  },
-  "Análise de Balanço": {
-    regime: { chave: "Tributacao", filtroEl: () => el.regime },
-    segunda: { chave: "Segmento", subChave: "Tributacao", filtroEl: () => el.segmento, subFiltroEl: () => el.regime, label: "Por Segmento" },
-  },
-};
-let abaQuebraAtiva = "regime";
 
 function renderizarQuebras() {
-  const cfg = QUEBRA_CONFIG_POR_TIPO[tipoRelatorioAtivo][abaQuebraAtiva];
-  el.quebraConteudo.classList.toggle("quebra-grid--faixas", abaQuebraAtiva === "segunda");
-  if (cfg.subChave) {
-    renderizarFaixaSegunda(el.quebraConteudo, cfg.chave, cfg.subChave, cfg.filtroEl(), cfg.subFiltroEl());
-  } else {
-    renderizarQuebraGrupo(el.quebraConteudo, cfg.chave, cfg.filtroEl());
-  }
+  renderizarQuebraGrupo(el.quebraConteudo, "Tributacao", el.regime);
 }
-
-el.quebraAbas.forEach((botao) => {
-  botao.addEventListener("click", () => {
-    abaQuebraAtiva = botao.dataset.aba;
-    el.quebraAbas.forEach((b) => {
-      const ativa = b === botao;
-      b.classList.toggle("ativa", ativa);
-      b.setAttribute("aria-selected", ativa ? "true" : "false");
-    });
-    renderizarQuebras();
-  });
-});
 
 function renderizarRankingGerentes() {
   const contagens = new Map();
@@ -530,7 +452,9 @@ function renderizarRankingGerentes() {
     })
     .join("");
 
-  ativarFiltroClicavel(el.rankingGerentes.querySelectorAll(".ranking-linha"), el.gerente);
+  el.rankingGerentes.querySelectorAll(".ranking-linha").forEach((linhaEl) => {
+    linhaEl.addEventListener("click", () => alternarFiltroEMostrarTabela("Gerente", linhaEl.dataset.valor));
+  });
 }
 
 function celula(texto) {
@@ -566,6 +490,7 @@ function renderizarTabela() {
           <td>${regimeCurto(r.Tributacao)}</td>
           <td>${celula(rotuloStatus(r.Status))}</td>
           <td>${rotuloDoc}</td>
+          <td title="${r.DocumentoPendente ? r.DocumentoPendente.replace(/"/g, "&quot;") : ""}">${celula(r.DocumentoPendente)}</td>
         </tr>
       `;
     })
@@ -701,6 +626,15 @@ const UNIDADES_EXCLUIDAS = ["MG EXPRESS"];
 // usuário pediu pra juntar os dois portais).
 const ORDEM_TIPO_RELATORIO = ["Radar Fiscal", "Análise de Balanço"];
 
+// A "2ª dimensão" de navegação é "Departamento" no Radar Fiscal (aninhado
+// só nele) e "Segmento" na Análise de Balanço (que não tem Departamento) —
+// mesmo papel estrutural, fonte de dado diferente. Usado pela tela de
+// Departamento/Segmento (ver renderizarTelaDepartamentos).
+const QUEBRA_CONFIG_POR_TIPO = {
+  "Radar Fiscal": { segunda: { chave: "Departamento", label: "Por Departamento" } },
+  "Análise de Balanço": { segunda: { chave: "Segmento", label: "Por Segmento" } },
+};
+
 function renderizarTipoRelatorioAbas(tipos) {
   const ordenados = [...tipos].sort((a, b) => {
     const ia = ORDEM_TIPO_RELATORIO.indexOf(a);
@@ -724,6 +658,135 @@ function renderizarTipoRelatorioAbas(tipos) {
   return ordenados;
 }
 
+// ── Navegação Unidade -> Departamento/Segmento ──────────────────────────
+// `escopo.unidade` null = tela de Unidades. `escopo.unidade` setado e
+// `escopo.depto` null = tela da Unidade (visão Consolidada da unidade
+// inteira + cards de Departamento/Segmento pra detalhar — as "2 visões").
+// Os dois setados = tela do Departamento/Segmento (corpo do dashboard mais
+// restrito).
+function irParaTelaUnidades() {
+  escopo = { unidade: null, depto: null };
+  atualizarNavegacao();
+}
+
+function irParaUnidadeConsolidado() {
+  escopo.depto = null;
+  atualizarNavegacao();
+}
+
+function selecionarUnidade(unidade) {
+  escopo = { unidade, depto: null };
+  atualizarNavegacao();
+}
+
+function selecionarDepartamento(depto) {
+  escopo.depto = depto;
+  atualizarNavegacao();
+}
+
+function renderizarBreadcrumb() {
+  const partes = [{ texto: "Painel de Unidades", acao: irParaTelaUnidades }];
+  if (escopo.unidade) partes.push({ texto: escopo.unidade.toUpperCase(), acao: irParaUnidadeConsolidado });
+  if (escopo.depto) partes.push({ texto: escopo.depto, acao: null });
+
+  el.breadcrumbCrumbs.innerHTML = partes
+    .map((p, i) => {
+      if (i === partes.length - 1) return `<span class="crumb-atual">${p.texto}</span>`;
+      return `<span class="crumb-link" data-i="${i}">${p.texto}</span><span class="crumb-sep">›</span>`;
+    })
+    .join("");
+
+  el.breadcrumbCrumbs.querySelectorAll(".crumb-link").forEach((crumbEl) => {
+    crumbEl.addEventListener("click", () => partes[Number(crumbEl.dataset.i)].acao());
+  });
+
+  el.breadcrumbBar.classList.toggle("oculto", !escopo.unidade);
+}
+
+function calcularDadosEscopo() {
+  const chaveSegunda = QUEBRA_CONFIG_POR_TIPO[tipoRelatorioAtivo].segunda.chave;
+  return dadosTipo.filter((r) => {
+    if (escopo.unidade && r.Unidade !== escopo.unidade) return false;
+    if (escopo.depto && r[chaveSegunda] !== escopo.depto) return false;
+    return true;
+  });
+}
+
+function limparFiltrosGerais() {
+  el.busca.value = "";
+  el.segmento.value = "";
+  el.regime.value = "";
+  el.status_.value = "";
+  el.documentacao.value = "";
+  el.gerente.value = "";
+}
+
+function limparFiltrosTabela() {
+  el.tBusca.value = "";
+  el.tSegmento.value = "";
+  el.tRegime.value = "";
+  el.tStatus.value = "";
+  el.tDocumentacao.value = "";
+  el.tGerente.value = "";
+}
+
+// Corpo do dashboard (Filtros, Por Tributação, Evolução, Ranking, Filtros
+// da tabela, Tabela) — compartilhado entre a tela da Unidade (Consolidado)
+// e a tela do Departamento/Segmento, só muda o recorte de `dadosEscopo`.
+function atualizarCorpoDashboard() {
+  dadosEscopo = calcularDadosEscopo();
+
+  limparFiltrosGerais();
+  limparFiltrosTabela();
+
+  repopularSelect(el.segmento, new Set(dadosEscopo.map((r) => r.Segmento).filter(Boolean)));
+  repopularSelect(el.regime, new Set(dadosEscopo.map((r) => r.Tributacao).filter(Boolean)));
+  repopularSelect(el.gerente, new Set(dadosEscopo.map((r) => r.Gerente).filter(Boolean)));
+  repopularSelect(el.status_, new Set(dadosEscopo.map((r) => r.Status).filter(Boolean)), rotuloStatus);
+  repopularSelect(el.documentacao, new Set(dadosEscopo.map((r) => r.Documentacao).filter(Boolean)));
+  repopularSelect(el.tSegmento, new Set(dadosEscopo.map((r) => r.Segmento).filter(Boolean)));
+  repopularSelect(el.tRegime, new Set(dadosEscopo.map((r) => r.Tributacao).filter(Boolean)));
+  repopularSelect(el.tGerente, new Set(dadosEscopo.map((r) => r.Gerente).filter(Boolean)));
+  repopularSelect(el.tStatus, new Set(dadosEscopo.map((r) => r.Status).filter(Boolean)), rotuloStatus);
+  repopularSelect(el.tDocumentacao, new Set(dadosEscopo.map((r) => r.Documentacao).filter(Boolean)));
+
+  aplicarFiltros();
+  aplicarFiltroTabela();
+}
+
+function atualizarNavegacao() {
+  renderizarBreadcrumb();
+
+  const telaUnidades = !escopo.unidade;
+  const telaDepartamentoGrid = !!escopo.unidade && !escopo.depto;
+  const corpoVisivel = !!escopo.unidade;
+
+  el.secaoUnidades.classList.toggle("oculto", !telaUnidades);
+  el.secaoDepartamentos.classList.toggle("oculto", !telaDepartamentoGrid);
+  el.corpoDashboard.classList.toggle("oculto", !corpoVisivel);
+
+  if (telaUnidades) {
+    renderizarCardsNavegacao(
+      el.unidadesGrid, dadosTipo, "Unidade", selecionarUnidade,
+      "Nenhuma unidade com dados para este tipo de relatório.",
+      (v) => v.toUpperCase()
+    );
+    return;
+  }
+
+  if (telaDepartamentoGrid) {
+    const cfgSegunda = QUEBRA_CONFIG_POR_TIPO[tipoRelatorioAtivo].segunda;
+    el.departamentosGridTitulo.textContent = cfgSegunda.label;
+    const rowsUnidade = dadosTipo.filter((r) => r.Unidade === escopo.unidade);
+    renderizarCardsNavegacao(
+      el.departamentosGrid, rowsUnidade, cfgSegunda.chave, selecionarDepartamento,
+      "Nenhum registro para esta unidade."
+    );
+  }
+
+  atualizarCorpoDashboard();
+}
+
 function selecionarTipoRelatorio(tipo) {
   tipoRelatorioAtivo = tipo;
   dadosTipo = dados.filter((r) => r.TipoRelatorio === tipo);
@@ -734,60 +797,13 @@ function selecionarTipoRelatorio(tipo) {
     botao.setAttribute("aria-selected", ativo ? "true" : "false");
   });
 
-  // O filtro/coluna "Departamento" só existe no Radar Fiscal — some da tela
-  // (não só fica vazio) quando o Tipo ativo é a Análise de Balanço.
-  const temDepartamento = tipo === "Radar Fiscal";
-  el.deptoGrupo.classList.toggle("oculto", !temDepartamento);
-  el.tDeptoGrupo.classList.toggle("oculto", !temDepartamento);
-
-  // Rótulo da 2ª aba de cards muda com a fonte ("Por Departamento" vs
-  // "Por Segmento") — ver QUEBRA_CONFIG_POR_TIPO.
-  el.quebraAbaSegunda.textContent = QUEBRA_CONFIG_POR_TIPO[tipo].segunda.label;
-
-  // Trocar de Tipo de Relatório reseta todos os filtros (gerais e da
-  // tabela) — mesmo padrão do SPED, evita manter selecionado um valor que
-  // pode não existir na outra fonte.
-  el.busca.value = "";
-  el.unidade.valores.clear();
-  el.segmento.value = "";
-  el.regime.value = "";
-  el.depto.value = "";
-  el.status_.value = "";
-  el.documentacao.value = "";
-  el.gerente.value = "";
-  el.tBusca.value = "";
-  el.tUnidade.value = "";
-  el.tSegmento.value = "";
-  el.tRegime.value = "";
-  el.tDepto.value = "";
-  el.tStatus.value = "";
-  el.tDocumentacao.value = "";
-  el.tGerente.value = "";
-  abaQuebraAtiva = "regime";
-  el.quebraAbas.forEach((b) => {
-    const ativa = b.dataset.aba === "regime";
-    b.classList.toggle("ativa", ativa);
-    b.setAttribute("aria-selected", ativa ? "true" : "false");
-  });
-
-  renderizarUnidadeTopo();
-  repopularSelect(el.segmento, new Set(dadosTipo.map((r) => r.Segmento).filter(Boolean)));
-  repopularSelect(el.regime, new Set(dadosTipo.map((r) => r.Tributacao).filter(Boolean)));
-  repopularSelect(el.depto, new Set(dadosTipo.map((r) => r.Departamento).filter(Boolean)));
-  repopularSelect(el.gerente, new Set(dadosTipo.map((r) => r.Gerente).filter(Boolean)));
-  repopularSelect(el.status_, new Set(dadosTipo.map((r) => r.Status).filter(Boolean)), rotuloStatus);
-  repopularSelect(el.documentacao, new Set(dadosTipo.map((r) => r.Documentacao).filter(Boolean)));
-  repopularSelect(el.tUnidade, new Set(dadosTipo.map((r) => r.Unidade).filter(Boolean)), (v) => v.toUpperCase());
-  repopularSelect(el.tSegmento, new Set(dadosTipo.map((r) => r.Segmento).filter(Boolean)));
-  repopularSelect(el.tRegime, new Set(dadosTipo.map((r) => r.Tributacao).filter(Boolean)));
-  repopularSelect(el.tDepto, new Set(dadosTipo.map((r) => r.Departamento).filter(Boolean)));
-  repopularSelect(el.tGerente, new Set(dadosTipo.map((r) => r.Gerente).filter(Boolean)));
-  repopularSelect(el.tStatus, new Set(dadosTipo.map((r) => r.Status).filter(Boolean)), rotuloStatus);
-  repopularSelect(el.tDocumentacao, new Set(dadosTipo.map((r) => r.Documentacao).filter(Boolean)));
+  // Trocar de Tipo de Relatório volta pra tela de Unidades — mesmo padrão
+  // de sempre resetar ao trocar de fonte, evita manter selecionada uma
+  // Unidade/Departamento que pode não existir na outra fonte.
+  escopo = { unidade: null, depto: null };
 
   atualizarStatusExibido();
-  aplicarFiltros();
-  aplicarFiltroTabela();
+  atualizarNavegacao();
 }
 
 function carregarDados() {
@@ -803,7 +819,7 @@ function carregarDados() {
   ]).then(([radarFiscal, analiseBalanco]) => {
     dados = [...radarFiscal, ...analiseBalanco].filter((r) => !UNIDADES_EXCLUIDAS.includes(r.Unidade));
     if (!dados.length) {
-      el.corpo.innerHTML = `<tr><td colspan="9">Nenhum dado exportado ainda — rode os robôs do Radar Fiscal e da Análise de Balanço.</td></tr>`;
+      el.unidadesGrid.innerHTML = `<p class="evolucao-vazio">Nenhum dado exportado ainda — rode os robôs do Radar Fiscal e da Análise de Balanço.</p>`;
       return;
     }
     const tipos = renderizarTipoRelatorioAbas([...new Set(dados.map((r) => r.TipoRelatorio).filter(Boolean))]);
@@ -811,37 +827,23 @@ function carregarDados() {
   });
 }
 
-[el.busca, el.segmento, el.regime, el.depto, el.status_, el.documentacao, el.gerente].forEach((campo) => {
+[el.busca, el.segmento, el.regime, el.status_, el.documentacao, el.gerente].forEach((campo) => {
   campo.addEventListener("input", aplicarFiltros);
   campo.addEventListener("change", aplicarFiltros);
 });
 
 el.limpar.addEventListener("click", () => {
-  el.busca.value = "";
-  el.unidade.valores.clear();
-  el.segmento.value = "";
-  el.regime.value = "";
-  el.depto.value = "";
-  el.status_.value = "";
-  el.documentacao.value = "";
-  el.gerente.value = "";
+  limparFiltrosGerais();
   aplicarFiltros();
 });
 
-[el.tBusca, el.tUnidade, el.tSegmento, el.tRegime, el.tDepto, el.tStatus, el.tDocumentacao, el.tGerente].forEach((campo) => {
+[el.tBusca, el.tSegmento, el.tRegime, el.tStatus, el.tDocumentacao, el.tGerente].forEach((campo) => {
   campo.addEventListener("input", aplicarFiltroTabela);
   campo.addEventListener("change", aplicarFiltroTabela);
 });
 
 el.tLimpar.addEventListener("click", () => {
-  el.tBusca.value = "";
-  el.tUnidade.value = "";
-  el.tSegmento.value = "";
-  el.tRegime.value = "";
-  el.tDepto.value = "";
-  el.tStatus.value = "";
-  el.tDocumentacao.value = "";
-  el.tGerente.value = "";
+  limparFiltrosTabela();
   aplicarFiltroTabela();
 });
 
