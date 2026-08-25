@@ -23,7 +23,6 @@ let filtradosTabela = [];
 
 const el = {
   status: document.getElementById("status-execucao"),
-  statusRodape: document.getElementById("status-execucao-rodape"),
   tipoRelatorioAbas: document.getElementById("tipo-relatorio-abas"),
   breadcrumbBar: document.getElementById("navegacao-breadcrumb"),
   breadcrumbCrumbs: document.getElementById("breadcrumb-crumbs"),
@@ -572,13 +571,10 @@ function atualizarStatusExibido() {
   const s = statusPorTipo[tipoRelatorioAtivo];
   if (!s) {
     el.status.textContent = "Nenhuma execução registrada ainda.";
-    el.statusRodape.textContent = "Nenhuma execução registrada ainda.";
     return;
   }
   const data = new Date(s.ultima_execucao);
-  const texto = `${tipoRelatorioAtivo} atualizado em ${data.toLocaleString("pt-BR")}`;
-  el.status.textContent = texto;
-  el.statusRodape.textContent = texto;
+  el.status.textContent = `${tipoRelatorioAtivo} atualizado em ${data.toLocaleString("pt-BR")}`;
 }
 
 function formatarDataCurta(iso) {
