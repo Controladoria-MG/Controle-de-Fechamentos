@@ -382,6 +382,54 @@ function renderizarCardsNavegacao(container, rows, chave, aoClicar, mensagemVazi
   });
 }
 
+// Tela 1 (Painel de Controle) — igual ao Portal de Tarefas: só o nome da
+// unidade e um rodapé fixo, sem nenhum número/estatística no card.
+// Ordem fixa pedida pelo usuário (2026-08-25) — não alfabética. Unidade que
+// aparecer nos dados sem estar nesta lista vai pro final, em ordem alfabética.
+// Grafia tem que bater exata com o dado bruto — "Santos" vem com essa
+// capitalização mesmo (as outras 3 vêm em caixa alta), confirmado no JSON.
+const ORDEM_UNIDADES = ["SP", "RJ", "Santos", "GOIAS"];
+
+// Nome por extenso pra exibição (card da Unidade + breadcrumb) — o dado
+// bruto (`r.Unidade`, usado em filtros/tabela/data-valor) continua a sigla.
+const NOME_COMPLETO_UNIDADE = {
+  SP: "São Paulo",
+  RJ: "Rio de Janeiro",
+  Santos: "Santos",
+  GOIAS: "Goiás",
+};
+
+function nomeCompletoUnidade(sigla) {
+  return NOME_COMPLETO_UNIDADE[sigla] || sigla;
+}
+
+function renderizarCardsUnidades(container, rows, aoClicar) {
+  const unidades = [...new Set(rows.map((r) => r.Unidade).filter(Boolean))].sort((a, b) => {
+    const ia = ORDEM_UNIDADES.indexOf(a);
+    const ib = ORDEM_UNIDADES.indexOf(b);
+    if (ia === -1 && ib === -1) return a.localeCompare(b, "pt-BR");
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+  if (!unidades.length) {
+    container.innerHTML = `<p class="evolucao-vazio">Nenhuma unidade com dados para este tipo de relatório.</p>`;
+    return;
+  }
+  container.innerHTML = unidades
+    .map((nome) => `
+      <div class="unidade-card" data-valor="${nome.replace(/"/g, "&quot;")}">
+        <div class="unidade-card-nome">${nomeCompletoUnidade(nome)}</div>
+        <div class="unidade-card-footer">Clique para ver os detalhes</div>
+      </div>
+    `)
+    .join("");
+
+  container.querySelectorAll(".unidade-card").forEach((cardEl) => {
+    cardEl.addEventListener("click", () => aoClicar(cardEl.dataset.valor));
+  });
+}
+
 function renderizarQuebraGrupo(container, campo, filtroEl) {
   const grupos = contarDetalhado(filtrados, campo);
   const selecionado = filtroEl.value;
@@ -686,7 +734,7 @@ function selecionarDepartamento(depto) {
 
 function renderizarBreadcrumb() {
   const partes = [{ texto: "Painel de Unidades", acao: irParaTelaUnidades }];
-  if (escopo.unidade) partes.push({ texto: escopo.unidade.toUpperCase(), acao: irParaUnidadeConsolidado });
+  if (escopo.unidade) partes.push({ texto: nomeCompletoUnidade(escopo.unidade), acao: irParaUnidadeConsolidado });
   if (escopo.depto) partes.push({ texto: escopo.depto, acao: null });
 
   el.breadcrumbCrumbs.innerHTML = partes
@@ -766,11 +814,7 @@ function atualizarNavegacao() {
   el.corpoDashboard.classList.toggle("oculto", !corpoVisivel);
 
   if (telaUnidades) {
-    renderizarCardsNavegacao(
-      el.unidadesGrid, dadosTipo, "Unidade", selecionarUnidade,
-      "Nenhuma unidade com dados para este tipo de relatório.",
-      (v) => v.toUpperCase()
-    );
+    renderizarCardsUnidades(el.unidadesGrid, dadosTipo, selecionarUnidade);
     return;
   }
 
