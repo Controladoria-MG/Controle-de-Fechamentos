@@ -80,20 +80,21 @@ MAPA_GERENTES = {
     "BRUNO MOTA": "Bruno Mota",
 }
 # Colunas da Planilha de Mercados trazidas para o resumo (as 6 da consulta
-# original + "DOC. PENDENTE CHECKLIST", pedida depois pro portal mostrar o
-# documento pendente de cada empresa), renomeadas com o prefixo "Planilha de
-# Mercados." como no Power Query.
+# original + "PENDENCIAS FECHAMENTO", pedida depois pro portal mostrar o
+# documento/pendência de fechamento de cada empresa — só faz sentido exibir
+# quando "ÍA" == "A", ver a máscara em _processar_resumo), renomeadas com o
+# prefixo "Planilha de Mercados." como no Power Query.
 COLUNAS_MERCADOS_TRAZIDAS = [
     "ÍA", "DESC. REMESSAS", "Data Comentário Operação",
     "EFV ATUAL Data", "AÇÃO GERENTE", "Data Comentário Gerência",
-    "DOC. PENDENTE CHECKLIST",
+    "PENDENCIAS FECHAMENTO",
 ]
 
 COLUNAS_PORTAL = [
     "IdCorporativo", "Nome", "Grupo", "Unidade", "Segmento", "Gerente de Contas",
     "Status", "DeptoFiscal", "RegimeApuracao", "EmpSemMovto",
     "Documentação", "DiasSemAtualizacao", "Planilha de Mercados.AÇÃO GERENTE",
-    "Planilha de Mercados.DESC. REMESSAS", "Planilha de Mercados.DOC. PENDENTE CHECKLIST",
+    "Planilha de Mercados.DESC. REMESSAS", "Planilha de Mercados.PENDENCIAS FECHAMENTO",
     "DataConfirmacao",
 ]
 
@@ -612,6 +613,15 @@ def _processar_resumo(df_radar: pd.DataFrame, df_mercados: pd.DataFrame, log=Non
         lambda v: "Documentação Pendente" if (pd.isna(v) or v == "" or v == "A") else "Documentação Recebida"
     )
 
+    # "PENDENCIAS FECHAMENTO" só faz sentido mostrar quando ÍA == "A" —
+    # pedido explícito do usuário (2026-08-25): "só vai ter documento
+    # pendente caso a coluna ÍA corresponda 'A'". Nos outros casos (inclusive
+    # nos outros que também contam como Documentação Pendente — ÍA em branco/
+    # NaN) a coluna fica vazia, mesmo que a Planilha de Mercados tenha algum
+    # texto nela.
+    coluna_pendencias = "Planilha de Mercados.PENDENCIAS FECHAMENTO"
+    resumo[coluna_pendencias] = resumo[coluna_pendencias].where(resumo[coluna_ia] == "A")
+
     # Dias desde o último comentário da Operação — usado pra sinalizar
     # pendências "paradas" há muito tempo. Fica em branco quando não há
     # comentário registrado (não dá pra inferir "há quanto tempo" sem data).
@@ -625,7 +635,7 @@ def _processar_resumo(df_radar: pd.DataFrame, df_mercados: pd.DataFrame, log=Non
         "Planilha de Mercados.EFV ATUAL Data",
         "Planilha de Mercados.AÇÃO GERENTE",
         "Planilha de Mercados.Data Comentário Gerência",
-        "Planilha de Mercados.DOC. PENDENTE CHECKLIST",
+        coluna_pendencias,
     ]
     return resumo[ordem]
 
@@ -666,7 +676,7 @@ def _gerar_json_portal(df: pd.DataFrame) -> None:
         "Gerente de Contas": "GerenteContas",
         "Planilha de Mercados.AÇÃO GERENTE": "AcaoGerente",
         "Planilha de Mercados.DESC. REMESSAS": "DescRemessas",
-        "Planilha de Mercados.DOC. PENDENTE CHECKLIST": "DocumentoPendente",
+        "Planilha de Mercados.PENDENCIAS FECHAMENTO": "DocumentoPendente",
     })
     registros = subset.to_dict(orient="records")
 

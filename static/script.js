@@ -79,20 +79,14 @@ function corrigirDocumentacao(status, documentacao, statusNaoImportado) {
   return documentacao;
 }
 
-// A "Planilha de Mercados" traz, por empresa, um texto de várias linhas com
-// os documentos pendentes no checklist (uma linha por documento, com
-// competência/prazo e um rodapé fixo "via API Integração MGC"). Aqui a
-// gente simplifica pra só os nomes dos documentos, num texto compacto —
-// só existe pro Radar Fiscal (só SP/GOIAS passam pela Planilha de Mercados).
+// A "Planilha de Mercados" traz um comentário livre sobre a pendência de
+// fechamento de cada empresa (coluna "PENDENCIAS FECHAMENTO") — só existe
+// pro Radar Fiscal (só SP/GOIAS passam pela Planilha de Mercados) e o
+// backend já garante que só vem preenchido quando "ÍA" == "A" (pedido do
+// usuário, 2026-08-25 — ver máscara em radar_fiscal.py::_processar_resumo).
 function formatarDocumentoPendente(texto) {
-  if (!texto) return null;
-  const itens = texto
-    .split("\n")
-    .map((linha) => linha.trim())
-    .filter((linha) => linha && !/^via /i.test(linha))
-    .map((linha) => linha.split("(")[0].trim())
-    .filter(Boolean);
-  return itens.length ? itens.join(", ") : null;
+  const limpo = (texto || "").trim();
+  return limpo || null;
 }
 
 function normalizarRadarFiscal(r) {
@@ -274,11 +268,52 @@ const CAMPO_PARA_FILTROS = {
   Gerente: () => [el.gerente, el.tGerente],
 };
 
+// O total mostrado num card já reflete os filtros gerais ativos no momento
+// (os cards são recalculados a partir de `filtrados`) — por isso um clique
+// só precisa ACRESCENTAR o(s) campo(s) daquele card aos filtros gerais, sem
+// mexer nos outros: se o usuário já tinha filtrado por Gerente antes (via
+// ranking, por ex.) e clica num card recalculado dentro desse contexto, o
+// resultado precisa continuar batendo com o número do card, não voltar a
+// mostrar tudo. O que precisa ser garantido à parte é o filtro da TABELA:
+// ele é independente por design (não afeta KPIs/cards), então sempre que um
+// clique disparar esse "modo tabela dinâmica", sincronizamos os 6 campos da
+// tabela com os 6 campos gerais por inteiro — nunca só o(s) campo(s) do
+// clique — pra nenhum filtro da tabela "esquecido" de um clique anterior
+// ficar combinado por engano com o novo e mostrar um conjunto que não bate
+// com o card (bug real achado ao verificar o comportamento, 2026-08-25:
+// clicar em "Documentação Pendente" e depois em "Fechado" deixava a tabela
+// zerada, porque o filtro de Documentação da tabela não tinha sido limpo).
+function sincronizarFiltroTabelaComGeral() {
+  el.tBusca.value = el.busca.value;
+  el.tSegmento.value = el.segmento.value;
+  el.tRegime.value = el.regime.value;
+  el.tStatus.value = el.status_.value;
+  el.tDocumentacao.value = el.documentacao.value;
+  el.tGerente.value = el.gerente.value;
+}
+
 function alternarFiltroEMostrarTabela(campo, valor) {
-  const [geralEl, tabelaEl] = CAMPO_PARA_FILTROS[campo]();
-  const novoValor = geralEl.value === valor ? "" : valor;
-  geralEl.value = novoValor;
-  tabelaEl.value = novoValor;
+  const [geralEl] = CAMPO_PARA_FILTROS[campo]();
+  geralEl.value = geralEl.value === valor ? "" : valor;
+  sincronizarFiltroTabelaComGeral();
+  aplicarFiltros();
+  aplicarFiltroTabela();
+  el.tabelaSecao.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// Igual a alternarFiltroEMostrarTabela, mas fixa (ou desliga, se já estava
+// ativa a combinação inteira — mesmo toggle) vários campos de uma vez —
+// usado pelos níveis "de dentro" de um card (doc-grupo/status-linha), que
+// precisam combinar o próprio filtro com o do card "pai" (Tributação). Sem
+// isso, clicar em "Documentação Pendente: 2" dentro do card "Lucro Real"
+// filtrava só por Documentação, mostrando todas as pendentes de SP (7), não
+// as 2 respectivas daquele card.
+function filtrarPorVariosEMostrarTabela(pares) {
+  const jaEstavaAtivo = pares.every(([campo, valor]) => CAMPO_PARA_FILTROS[campo]()[0].value === valor);
+  pares.forEach(([campo, valor]) => {
+    CAMPO_PARA_FILTROS[campo]()[0].value = jaEstavaAtivo ? "" : valor;
+  });
+  sincronizarFiltroTabelaComGeral();
   aplicarFiltros();
   aplicarFiltroTabela();
   el.tabelaSecao.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -288,18 +323,27 @@ function alternarFiltroEMostrarTabela(campo, valor) {
 // linha de status) depois que o HTML já foi inserido no DOM — mesmo
 // padrão usado pela "Fixar" da versão anterior. stopPropagation() evita
 // que o clique também dispare o card externo (quebra-card), que filtra
-// por outra dimensão (Tributação).
+// por outra dimensão (Tributação) — mas ainda assim precisamos do filtro
+// do card externo combinado (ver filtrarPorVariosEMostrarTabela).
 function ativarCliqueDetalhado(container) {
   container.querySelectorAll(".doc-grupo-clicavel").forEach((elDoc) => {
     elDoc.addEventListener("click", (e) => {
       e.stopPropagation();
-      alternarFiltroEMostrarTabela("Documentacao", elDoc.dataset.valor);
+      const card = elDoc.closest(".quebra-card");
+      filtrarPorVariosEMostrarTabela([
+        [card.dataset.campo, card.dataset.valor],
+        ["Documentacao", elDoc.dataset.valor],
+      ]);
     });
   });
   container.querySelectorAll(".status-linha-clicavel").forEach((elStatus) => {
     elStatus.addEventListener("click", (e) => {
       e.stopPropagation();
-      alternarFiltroEMostrarTabela("Status", elStatus.dataset.valor);
+      const card = elStatus.closest(".quebra-card");
+      filtrarPorVariosEMostrarTabela([
+        [card.dataset.campo, card.dataset.valor],
+        ["Status", elStatus.dataset.valor],
+      ]);
     });
   });
 }
@@ -499,8 +543,15 @@ function renderizarRankingGerentes() {
     })
     .join("");
 
+  // O número mostrado no ranking é só as pendências do gerente (c.pendente),
+  // não o total de clientes dele — o filtro precisa combinar Gerente +
+  // Documentação Pendente pra mostrar exatamente esse número na tabela
+  // (mesma correção de filtrarPorVariosEMostrarTabela acima).
   el.rankingGerentes.querySelectorAll(".ranking-linha").forEach((linhaEl) => {
-    linhaEl.addEventListener("click", () => alternarFiltroEMostrarTabela("Gerente", linhaEl.dataset.valor));
+    linhaEl.addEventListener("click", () => filtrarPorVariosEMostrarTabela([
+      ["Gerente", linhaEl.dataset.valor],
+      ["Documentacao", "Documentação Pendente"],
+    ]));
   });
 }
 
@@ -537,7 +588,6 @@ function renderizarTabela() {
           <td>${regimeCurto(r.Tributacao)}</td>
           <td>${celula(rotuloStatus(r.Status))}</td>
           <td>${rotuloDoc}</td>
-          <td title="${r.DocumentoPendente ? r.DocumentoPendente.replace(/"/g, "&quot;") : ""}">${celula(r.DocumentoPendente)}</td>
         </tr>
       `;
     })
