@@ -166,9 +166,9 @@ main {
 
 .tipo-relatorio-aba {
   font: inherit;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   font-weight: 700;
-  padding: 10px 30px;
+  padding: 7px 22px;
   border: 1.5px solid var(--borda);
   border-radius: 999px;
   background: var(--bg-card-alt);
@@ -505,28 +505,6 @@ main {
 
 .doc-grupo {
   padding: 6px 0;
-}
-
-.doc-grupo-clicavel {
-  cursor: pointer;
-  border-radius: 6px;
-  transition: background 0.15s;
-}
-
-.doc-grupo-clicavel:hover {
-  background: var(--bg-hover-row);
-}
-
-.status-linha-clicavel {
-  cursor: pointer;
-  border-radius: 4px;
-  padding: 2px 4px;
-  margin: 0 -4px;
-  transition: background 0.15s;
-}
-
-.status-linha-clicavel:hover {
-  background: var(--bg-hover-row);
 }
 
 .doc-grupo + .doc-grupo {

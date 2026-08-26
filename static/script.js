@@ -324,39 +324,10 @@ function filtrarPorVariosEMostrarTabela(pares) {
   el.tabelaSecao.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// Liga os cliques nos níveis "de dentro" de um card (doc-grupo e cada
-// linha de status) depois que o HTML já foi inserido no DOM — mesmo
-// padrão usado pela "Fixar" da versão anterior. stopPropagation() evita
-// que o clique também dispare o card externo (quebra-card), que filtra
-// por outra dimensão (Tributação) — mas ainda assim precisamos do filtro
-// do card externo combinado (ver filtrarPorVariosEMostrarTabela).
-function ativarCliqueDetalhado(container) {
-  container.querySelectorAll(".doc-grupo-clicavel").forEach((elDoc) => {
-    elDoc.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const card = elDoc.closest(".quebra-card");
-      filtrarPorVariosEMostrarTabela([
-        [card.dataset.campo, card.dataset.valor],
-        ["Documentacao", elDoc.dataset.valor],
-      ]);
-    });
-  });
-  container.querySelectorAll(".status-linha-clicavel").forEach((elStatus) => {
-    elStatus.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const card = elStatus.closest(".quebra-card");
-      filtrarPorVariosEMostrarTabela([
-        [card.dataset.campo, card.dataset.valor],
-        ["Status", elStatus.dataset.valor],
-      ]);
-    });
-  });
-}
-
-// clicavel=false é usado pelos cards de navegação (Unidade/Departamento) —
-// ali o clique inteiro do card já navega pra outra tela, então o
-// doc-grupo/status-linha não precisam de handler próprio.
-function renderizarDocGrupo(docNome, d, totalCategoria, clicavel = false) {
+// Detalhamento de Documentação dentro de um card (quebra-card ou card de
+// navegação) — não tem handler de clique próprio: o clique é sempre do
+// card inteiro (ver quem chama esta função).
+function renderizarDocGrupo(docNome, d, totalCategoria) {
   const classe = docNome === "Documentação Recebida" ? "recebida" : "pendente";
   const pctDoc = totalCategoria ? (d.total / totalCategoria) * 100 : 0;
   const chaveNaoImportado = statusOrdem()[statusOrdem().length - 1];
@@ -372,10 +343,8 @@ function renderizarDocGrupo(docNome, d, totalCategoria, clicavel = false) {
     .map(([status, count]) => {
       const pctStatus = totalCategoria ? (count / totalCategoria) * 100 : 0;
       const rotulo = rotuloStatus(status);
-      const classeLinha = clicavel ? "status-linha status-linha-clicavel" : "status-linha";
-      const dataValor = clicavel ? ` data-valor="${status.replace(/"/g, "&quot;")}"` : "";
       return `
-        <div class="${classeLinha}"${dataValor}>
+        <div class="status-linha">
           <span class="status-nome" title="${rotulo}">${rotulo}</span>
           <span class="status-valores"><b>${count.toLocaleString("pt-BR")}</b><span class="status-pct">${formatarPct(pctStatus)}</span></span>
         </div>
@@ -383,11 +352,8 @@ function renderizarDocGrupo(docNome, d, totalCategoria, clicavel = false) {
     })
     .join("");
 
-  const classeDoc = clicavel ? `doc-grupo ${classe} doc-grupo-clicavel` : `doc-grupo ${classe}`;
-  const dataValorDoc = clicavel ? ` data-valor="${docNome.replace(/"/g, "&quot;")}"` : "";
-
   return `
-    <div class="${classeDoc}"${dataValorDoc}>
+    <div class="doc-grupo ${classe}">
       <div class="doc-cabecalho">
         <span class="doc-rotulo"><i class="ponto ${classe}"></i>${docNome}</span>
         <span class="doc-valores"><b>${d.total.toLocaleString("pt-BR")}</b><span class="doc-pct">${formatarPct(pctDoc)}</span></span>
@@ -410,7 +376,7 @@ function renderizarCardsNavegacao(container, rows, chave, aoClicar, mensagemVazi
   container.innerHTML = grupos
     .map(([nome, g]) => {
       const docsHtml = ORDEM_DOCUMENTACAO
-        .map((docNome) => renderizarDocGrupo(docNome, g.docs.get(docNome), g.total, false))
+        .map((docNome) => renderizarDocGrupo(docNome, g.docs.get(docNome), g.total))
         .join("");
       return `
         <div class="quebra-card nav-card" data-valor="${nome.replace(/"/g, "&quot;")}" title="${nome}">
@@ -485,7 +451,7 @@ function renderizarQuebraGrupo(container, campo, filtroEl) {
     .map(([nome, g]) => {
       const ativo = nome === selecionado ? " selecionado" : "";
       const docsHtml = ORDEM_DOCUMENTACAO
-        .map((docNome) => renderizarDocGrupo(docNome, g.docs.get(docNome), g.total, true))
+        .map((docNome) => renderizarDocGrupo(docNome, g.docs.get(docNome), g.total))
         .join("");
 
       return `
@@ -503,7 +469,6 @@ function renderizarQuebraGrupo(container, campo, filtroEl) {
   container.querySelectorAll(".quebra-card").forEach((cardEl) => {
     cardEl.addEventListener("click", () => alternarFiltroEMostrarTabela(cardEl.dataset.campo, cardEl.dataset.valor));
   });
-  ativarCliqueDetalhado(container);
 }
 
 function renderizarQuebras() {
