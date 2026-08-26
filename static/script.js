@@ -26,6 +26,7 @@ const el = {
   tipoRelatorioAbas: document.getElementById("tipo-relatorio-abas"),
   breadcrumbBar: document.getElementById("navegacao-breadcrumb"),
   breadcrumbCrumbs: document.getElementById("breadcrumb-crumbs"),
+  btnVoltarPainel: document.getElementById("btn-voltar-painel"),
   secaoUnidades: document.getElementById("secao-unidades"),
   unidadesGrid: document.getElementById("unidades-grid"),
   secaoDepartamentos: document.getElementById("secao-departamentos"),
@@ -163,7 +164,7 @@ function filtrarConjunto(conjunto, campos) {
     if (status && r.Status !== status) return false;
     if (documentacao && r.Documentacao !== documentacao) return false;
     if (busca) {
-      const alvo = `${r.Cliente || ""} ${r.Grupo || ""}`.toLowerCase();
+      const alvo = `${r.Id ?? ""} ${r.Cliente || ""} ${r.Grupo || ""}`.toLowerCase();
       if (!alvo.includes(busca)) return false;
     }
     return true;
@@ -268,21 +269,18 @@ const CAMPO_PARA_FILTROS = {
   Gerente: () => [el.gerente, el.tGerente],
 };
 
-// O total mostrado num card já reflete os filtros gerais ativos no momento
-// (os cards são recalculados a partir de `filtrados`) — por isso um clique
-// só precisa ACRESCENTAR o(s) campo(s) daquele card aos filtros gerais, sem
-// mexer nos outros: se o usuário já tinha filtrado por Gerente antes (via
-// ranking, por ex.) e clica num card recalculado dentro desse contexto, o
-// resultado precisa continuar batendo com o número do card, não voltar a
-// mostrar tudo. O que precisa ser garantido à parte é o filtro da TABELA:
-// ele é independente por design (não afeta KPIs/cards), então sempre que um
-// clique disparar esse "modo tabela dinâmica", sincronizamos os 6 campos da
-// tabela com os 6 campos gerais por inteiro — nunca só o(s) campo(s) do
-// clique — pra nenhum filtro da tabela "esquecido" de um clique anterior
-// ficar combinado por engano com o novo e mostrar um conjunto que não bate
-// com o card (bug real achado ao verificar o comportamento, 2026-08-25:
-// clicar em "Documentação Pendente" e depois em "Fechado" deixava a tabela
-// zerada, porque o filtro de Documentação da tabela não tinha sido limpo).
+// Clicar em qualquer card/linha SEMPRE limpa os outros filtros gerais antes
+// de aplicar o(s) campo(s) daquele clique — pedido explícito do usuário
+// (2026-08-25), depois de notar que clicar em "Simples Nacional" parecia
+// "ligar" o Status "Fechado" sozinho: o motivo era um filtro de Status
+// deixado por um clique anterior (em outra parte da tela) que continuava
+// ativo, já que a versão aditiva anterior só acrescentava o campo do clique
+// sem mexer nos outros. Comportamento único e previsível agora: um clique
+// sempre mostra exatamente (e só) o que aquele card/linha representa.
+// O filtro da TABELA (independente por design, não afeta KPIs/cards) é
+// sempre sincronizado por inteiro com o geral logo em seguida — nunca só
+// o(s) campo(s) do clique — pra nenhum filtro da tabela "esquecido" de um
+// clique anterior ficar combinado por engano com o novo.
 function sincronizarFiltroTabelaComGeral() {
   el.tBusca.value = el.busca.value;
   el.tSegmento.value = el.segmento.value;
@@ -294,7 +292,11 @@ function sincronizarFiltroTabelaComGeral() {
 
 function alternarFiltroEMostrarTabela(campo, valor) {
   const [geralEl] = CAMPO_PARA_FILTROS[campo]();
-  geralEl.value = geralEl.value === valor ? "" : valor;
+  const estavaAtivo = geralEl.value === valor;
+  limparFiltrosGerais();
+  if (!estavaAtivo) {
+    CAMPO_PARA_FILTROS[campo]()[0].value = valor;
+  }
   sincronizarFiltroTabelaComGeral();
   aplicarFiltros();
   aplicarFiltroTabela();
@@ -310,9 +312,12 @@ function alternarFiltroEMostrarTabela(campo, valor) {
 // as 2 respectivas daquele card.
 function filtrarPorVariosEMostrarTabela(pares) {
   const jaEstavaAtivo = pares.every(([campo, valor]) => CAMPO_PARA_FILTROS[campo]()[0].value === valor);
-  pares.forEach(([campo, valor]) => {
-    CAMPO_PARA_FILTROS[campo]()[0].value = jaEstavaAtivo ? "" : valor;
-  });
+  limparFiltrosGerais();
+  if (!jaEstavaAtivo) {
+    pares.forEach(([campo, valor]) => {
+      CAMPO_PARA_FILTROS[campo]()[0].value = valor;
+    });
+  }
   sincronizarFiltroTabelaComGeral();
   aplicarFiltros();
   aplicarFiltroTabela();
@@ -588,6 +593,7 @@ function renderizarTabela() {
           <td>${regimeCurto(r.Tributacao)}</td>
           <td>${celula(rotuloStatus(r.Status))}</td>
           <td>${rotuloDoc}</td>
+          <td title="${r.DocumentoPendente ? r.DocumentoPendente.replace(/"/g, "&quot;") : ""}">${celula(r.DocumentoPendente)}</td>
         </tr>
       `;
     })
@@ -778,6 +784,14 @@ function selecionarDepartamento(depto) {
   atualizarNavegacao();
 }
 
+// Botão "Voltar" — volta 1 nível por vez (departamento -> unidade -> painel
+// de unidades), não pula direto pro painel de controle igual o crumb
+// "Painel de Unidades" do breadcrumb.
+function voltarUmaSecao() {
+  if (escopo.depto) irParaUnidadeConsolidado();
+  else irParaTelaUnidades();
+}
+
 function renderizarBreadcrumb() {
   const partes = [{ texto: "Painel de Unidades", acao: irParaTelaUnidades }];
   if (escopo.unidade) partes.push({ texto: nomeCompletoUnidade(escopo.unidade), acao: irParaUnidadeConsolidado });
@@ -942,6 +956,8 @@ elBtnTema.addEventListener("click", () => {
   const escuro = document.body.classList.toggle("tema-escuro");
   elBtnTema.textContent = escuro ? "Alterar tema para Claro" : "Alterar tema para Escuro";
 });
+
+el.btnVoltarPainel.addEventListener("click", voltarUmaSecao);
 
 // Re-renderiza "Evolução Diária" quando a largura do container muda (ex.:
 // redimensionar a janela) — o viewBox do gráfico é calculado a partir da

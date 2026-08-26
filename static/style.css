@@ -191,6 +191,10 @@ main {
 /* Navegação Unidade -> Departamento/Segmento (breadcrumb + corpo) */
 
 .unidade-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
   padding: 10px 20px;
   background: var(--bg-card);
   border: 1px solid var(--borda);
@@ -198,6 +202,26 @@ main {
   font-size: 0.86rem;
   font-weight: 600;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+.btn-voltar {
+  display: inline-block;
+  flex-shrink: 0;
+  background: none;
+  border: 2px solid var(--mg-vermelho);
+  color: var(--mg-vermelho);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn-voltar:hover {
+  background-color: var(--mg-vermelho);
+  color: #fff;
 }
 
 .crumb-link {

@@ -26,6 +26,7 @@
     </section>
 
     <div class="unidade-bar oculto" id="navegacao-breadcrumb">
+      <button type="button" class="btn-voltar" id="btn-voltar-painel">Voltar</button>
       <span id="breadcrumb-crumbs"></span>
     </div>
 
@@ -48,7 +49,7 @@
         <div class="filtros-grid">
           <div class="filtro-grupo filtro-grupo-busca">
             <label class="filtro-label" for="f-busca">Buscar</label>
-            <input type="search" id="f-busca" class="filtro-input" placeholder="Cliente ou grupo...">
+            <input type="search" id="f-busca" class="filtro-input" placeholder="ID, cliente ou grupo...">
           </div>
           <div class="filtro-grupo">
             <label class="filtro-label" for="f-segmento">Segmento</label>
@@ -103,7 +104,7 @@
         <div class="filtros-grid">
           <div class="filtro-grupo filtro-grupo-busca">
             <label class="filtro-label" for="t-busca">Buscar</label>
-            <input type="search" id="t-busca" class="filtro-input" placeholder="Cliente ou grupo...">
+            <input type="search" id="t-busca" class="filtro-input" placeholder="ID, cliente ou grupo...">
           </div>
           <div class="filtro-grupo">
             <label class="filtro-label" for="t-segmento">Segmento</label>
@@ -132,15 +133,16 @@
         <div class="tabela-scroll">
           <table id="tabela">
             <colgroup>
-              <col style="width: 18%">
-              <col style="width: 11%">
+              <col style="width: 15%">
+              <col style="width: 9%">
+              <col style="width: 6%">
               <col style="width: 7%">
               <col style="width: 9%">
-              <col style="width: 12%">
-              <col style="width: 11%">
-              <col style="width: 10%">
-              <col style="width: 11%">
-              <col style="width: 11%">
+              <col style="width: 8%">
+              <col style="width: 8%">
+              <col style="width: 9%">
+              <col style="width: 9%">
+              <col style="width: 20%">
             </colgroup>
             <thead>
               <tr>
@@ -153,6 +155,7 @@
                 <th>Tributação</th>
                 <th>Status</th>
                 <th>Documentação</th>
+                <th>Documento Pendente</th>
               </tr>
             </thead>
             <tbody id="tabela-corpo"></tbody>
