@@ -27,6 +27,7 @@ const el = {
   breadcrumbBar: document.getElementById("navegacao-breadcrumb"),
   breadcrumbCrumbs: document.getElementById("breadcrumb-crumbs"),
   btnVoltarPainel: document.getElementById("btn-voltar-painel"),
+  placaresGrid: document.getElementById("placares-grid"),
   secaoUnidades: document.getElementById("secao-unidades"),
   unidadesGrid: document.getElementById("unidades-grid"),
   secaoDepartamentos: document.getElementById("secao-departamentos"),
@@ -444,6 +445,54 @@ function renderizarCardsUnidades(container, rows, aoClicar) {
   });
 }
 
+// ── Cards totalizadores (placares) — topo da tela de Unidade/Departamento,
+// mesma identidade visual do Portal de Tarefas. Reflete sempre o escopo
+// atual (unidade inteira, ou já recortado por departamento/segmento).
+function renderizarPlacares(rows) {
+  let recebida = 0;
+  let pendente = 0;
+  rows.forEach((r) => {
+    if (r.Documentacao === "Documentação Recebida") recebida++;
+    else if (r.Documentacao === "Documentação Pendente") pendente++;
+  });
+  const total = rows.length;
+  // Arredondamento "honesto": só mostra 0%/100% quando for exatamente isso —
+  // um valor pequeno mas não-zero nunca aparece como "0% do total", e um
+  // valor quase igual ao total nunca aparece como "100%" sem ser exato
+  // (pedido do usuário: 7 de 1449 mostrando "0%"/1442 de 1449 mostrando
+  // "100%" pode passar a impressão errada de que é 0 ou tudo).
+  const pct = (v) => {
+    if (!total) return "0% do total";
+    if (v === 0) return "0% do total";
+    if (v === total) return "100% do total";
+    const arredondado = Math.min(99, Math.max(1, Math.round((v / total) * 100)));
+    return `${arredondado}% do total`;
+  };
+  const escoposDesc = escopo.depto ? "do departamento" : "da unidade";
+
+  const defs = [
+    { classe: "total", valor: total, label: "Total de Empresas", desc: escoposDesc, clicavel: false },
+    { classe: "recebida", valor: recebida, label: "Documentação Recebida", desc: pct(recebida), clicavel: false },
+    {
+      classe: "pendente", valor: pendente, label: "Documentação Pendente", desc: pct(pendente),
+      clicavel: true, campo: "Documentacao", filtroValor: "Documentação Pendente",
+    },
+  ];
+
+  el.placaresGrid.innerHTML = defs.map((p) => `
+    <div class="placar ${p.classe}${p.clicavel ? " placar-clicavel" : ""}"
+      ${p.clicavel ? `data-campo="${p.campo}" data-valor="${p.filtroValor}"` : ""}>
+      <div class="placar-label">${p.label}</div>
+      <div class="placar-valor">${p.valor.toLocaleString("pt-BR")}</div>
+      <div class="placar-desc">${p.desc}</div>
+    </div>
+  `).join("");
+
+  el.placaresGrid.querySelectorAll(".placar-clicavel").forEach((cardEl) => {
+    cardEl.addEventListener("click", () => alternarFiltroEMostrarTabela(cardEl.dataset.campo, cardEl.dataset.valor));
+  });
+}
+
 function renderizarQuebraGrupo(container, campo, filtroEl) {
   const grupos = contarDetalhado(filtrados, campo);
   const selecionado = filtroEl.value;
@@ -808,6 +857,7 @@ function limparFiltrosTabela() {
 // e a tela do Departamento/Segmento, só muda o recorte de `dadosEscopo`.
 function atualizarCorpoDashboard() {
   dadosEscopo = calcularDadosEscopo();
+  renderizarPlacares(dadosEscopo);
 
   limparFiltrosGerais();
   limparFiltrosTabela();
@@ -837,6 +887,8 @@ function atualizarNavegacao() {
   el.secaoUnidades.classList.toggle("oculto", !telaUnidades);
   el.secaoDepartamentos.classList.toggle("oculto", !telaDepartamentoGrid);
   el.corpoDashboard.classList.toggle("oculto", !corpoVisivel);
+  el.btnVoltarPainel.classList.toggle("oculto", !corpoVisivel);
+  el.placaresGrid.classList.toggle("oculto", !corpoVisivel);
 
   if (telaUnidades) {
     renderizarCardsUnidades(el.unidadesGrid, dadosTipo, selecionarUnidade);

@@ -20,15 +20,20 @@
     </div>
   </header>
 
+  <!-- Breadcrumb de navegação — fora do container, ocupa a largura toda,
+       igual ao Portal de Tarefas -->
+  <div class="unidade-bar oculto" id="navegacao-breadcrumb">
+    <span id="breadcrumb-crumbs"></span>
+  </div>
+
   <main>
     <section class="tipo-relatorio-card card" aria-label="Tipo de relatório">
       <div class="tipo-relatorio-abas" id="tipo-relatorio-abas" role="tablist"></div>
     </section>
 
-    <div class="unidade-bar oculto" id="navegacao-breadcrumb">
-      <button type="button" class="btn-voltar" id="btn-voltar-painel">Voltar</button>
-      <span id="breadcrumb-crumbs"></span>
-    </div>
+    <button type="button" class="btn-voltar oculto" id="btn-voltar-painel">&#8592; Voltar</button>
+
+    <div class="placares-grid oculto" id="placares-grid"></div>
 
     <section id="secao-unidades" aria-label="Escolha a unidade">
       <h2 class="painel-unidades-titulo">Painel de Controle</h2>

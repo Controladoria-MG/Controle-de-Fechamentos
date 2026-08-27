@@ -188,32 +188,28 @@ main {
   color: #fff;
 }
 
-/* Navegação Unidade -> Departamento/Segmento (breadcrumb + corpo) */
+/* Navegação Unidade -> Departamento/Segmento (breadcrumb preto + corpo) —
+   mesma identidade visual do Portal de Tarefas. */
 
 .unidade-bar {
+  background-color: #1a1a1a;
+  padding: 10px 32px;
   display: flex;
   align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding: 10px 20px;
-  background: var(--bg-card);
-  border: 1px solid var(--borda);
-  border-radius: 8px;
-  font-size: 0.86rem;
-  font-weight: 600;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  border-bottom: 3px solid var(--mg-vermelho);
 }
 
 .btn-voltar {
   display: inline-block;
+  align-self: flex-start;
   flex-shrink: 0;
   background: none;
   border: 2px solid var(--mg-vermelho);
   color: var(--mg-vermelho);
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 0.88rem;
   font-weight: 700;
-  padding: 6px 14px;
+  padding: 7px 16px;
   border-radius: 4px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
@@ -225,23 +221,86 @@ main {
 }
 
 .crumb-link {
-  color: var(--mg-vermelho);
+  color: #888888;
+  font-size: 0.85rem;
   cursor: pointer;
 }
 
 .crumb-link:hover {
-  text-decoration: underline;
+  color: #cccccc;
 }
 
 .crumb-sep {
-  color: var(--cinza-muted);
+  color: var(--mg-vermelho);
+  font-weight: 700;
+  font-size: 1.1rem;
   margin: 0 8px;
-  font-weight: 400;
+  line-height: 1;
 }
 
 .crumb-atual {
-  color: var(--cinza-texto);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
 }
+
+/* ── Cards totalizadores (placares) — mesma identidade do Portal de
+   Tarefas, cores idênticas por categoria (preto/verde/vermelho). */
+
+.placares-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 20px;
+}
+
+.placar {
+  background-color: var(--bg-card);
+  border-radius: 6px;
+  padding: 24px 20px;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-bottom: 3px solid;
+}
+
+.placar-clicavel {
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+
+.placar-clicavel:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.12);
+}
+
+.placar-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+  color: var(--cinza-muted);
+}
+
+.placar-valor {
+  font-size: 2.2rem;
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
+.placar-desc {
+  font-size: 0.75rem;
+  color: var(--cinza-muted);
+}
+
+.placar.total     { border-color: var(--cinza-escuro); }
+.placar.total     .placar-valor { color: var(--cinza-escuro); }
+.placar.recebida  { border-color: #1E8C3A; }
+.placar.recebida  .placar-valor { color: #1E8C3A; }
+.placar.pendente  { border-color: var(--mg-vermelho); }
+.placar.pendente  .placar-valor { color: var(--mg-vermelho); }
 
 #corpo-dashboard {
   display: flex;
