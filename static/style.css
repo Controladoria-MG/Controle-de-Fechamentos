@@ -862,3 +862,166 @@ code {
   padding: 2px 6px;
   border-radius: 4px;
 }
+
+/* Placar "Fechamento Concluído" (mesma cor do antigo "Documentação
+   Recebida") */
+.placar.concluido { border-color: #1E8C3A; }
+.placar.concluido .placar-valor { color: #1E8C3A; }
+
+/* ── Abas Pendente / Concluído da tabela do fim da página ──────────── */
+.tabela-abas {
+  display: flex;
+  gap: 8px;
+  padding: 12px 12px 0;
+}
+
+.tabela-aba {
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 8px 22px;
+  border: 1.5px solid var(--borda);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: var(--bg-card-alt);
+  color: var(--cinza-texto);
+  cursor: pointer;
+}
+
+.tabela-aba:hover { color: var(--mg-vermelho); }
+
+.tabela-aba.ativa {
+  background: var(--mg-vermelho);
+  border-color: var(--mg-vermelho);
+  color: #fff;
+}
+
+/* Linhas de detalhe (bloco de Documentação / linha de Status dentro de um
+   card "Por Tributação", linha do ranking) que abrem o modal. */
+.status-linha.linha-modal,
+.doc-cabecalho.linha-modal {
+  cursor: pointer;
+}
+
+.status-linha.linha-modal {
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin: 0 -4px;
+}
+
+.status-linha.linha-modal:hover { background: rgba(192, 0, 0, 0.10); }
+.doc-cabecalho.linha-modal:hover { filter: brightness(1.12); }
+
+/* ── Modal: registros de uma linha de detalhe ─────────────────────── */
+body.modal-aberto { overflow: hidden; }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.modal-caixa {
+  display: flex;
+  flex-direction: column;
+  width: min(1360px, 100%);
+  max-height: 92vh;
+  background: var(--bg-card);
+  border-radius: 8px;
+  border-top: 5px solid var(--mg-vermelho);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.modal-cabecalho {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--borda);
+}
+
+.modal-cabecalho-info { min-width: 0; }
+
+.modal-titulo {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--cinza-escuro);
+}
+
+.modal-sub {
+  margin: 3px 0 0;
+  font-size: 0.8rem;
+  color: var(--cinza-muted);
+}
+
+.modal-fechar {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--cinza-muted);
+  cursor: pointer;
+  padding: 0 4px;
+}
+.modal-fechar:hover { color: var(--mg-vermelho); }
+
+.modal-filtros {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--borda);
+  background: var(--bg-card-alt);
+}
+
+.modal-corpo {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.modal-tabela {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.83rem;
+}
+
+.modal-tabela th {
+  position: sticky;
+  top: 0;
+  background: var(--mg-vermelho);
+  color: #fff;
+  text-align: left;
+  padding: 9px 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.25;
+  vertical-align: bottom;
+  z-index: 1;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.modal-tabela td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--borda);
+  color: var(--cinza-escuro);
+  vertical-align: top;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.modal-tabela tbody tr:last-child td { border-bottom: none; }
+.modal-tabela tbody tr:hover { background: var(--bg-hover-row); }
+
+.modal-vazio {
+  padding: 24px;
+  text-align: center;
+  color: var(--cinza-muted);
+}

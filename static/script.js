@@ -20,6 +20,10 @@ let tipoRelatorioAtivo = null;
 let escopo = { unidade: null, depto: null };
 let filtrados = [];
 let filtradosTabela = [];
+// Aba ativa da tabela do fim da página: "Pendente" (Status != Fechado) ou
+// "Concluído" (Status == Fechado). Corte adicional em cima dos 6 filtros
+// da tabela — mesma ideia das abas do Portal de Tarefas.
+let abaTabelaAtiva = "Pendente";
 
 const el = {
   status: document.getElementById("status-execucao"),
@@ -55,7 +59,32 @@ const el = {
   tDocumentacao: document.getElementById("t-documentacao"),
   tGerente: document.getElementById("t-gerente"),
   tLimpar: document.getElementById("t-limpar"),
+  // Abas Pendente/Concluído da tabela do fim da página.
+  tabelaAbas: document.getElementById("tabela-abas"),
+  // Modal (registros de uma linha de detalhe) — filtros próprios, iguais
+  // aos 6 da tela principal.
+  modal: document.getElementById("modal-registros"),
+  modalTitulo: document.getElementById("modal-titulo"),
+  modalSub: document.getElementById("modal-sub"),
+  modalFechar: document.getElementById("modal-fechar"),
+  modalCorpo: document.getElementById("modal-corpo"),
+  mBusca: document.getElementById("m-busca"),
+  mSegmento: document.getElementById("m-segmento"),
+  mRegime: document.getElementById("m-regime"),
+  mStatus: document.getElementById("m-status"),
+  mDocumentacao: document.getElementById("m-documentacao"),
+  mGerente: document.getElementById("m-gerente"),
 };
+
+// Um fechamento só conta como "concluído" quando o Status é "Fechado"
+// (mesmo valor literal nas duas fontes) — decisão do usuário (2026-09-02).
+// Qualquer outro Status (Simulando, Não importado, Com o GC, Bloqueado,
+// Importado Contábil) entra como pendente. Usado nos cards totalizadores
+// (placares) e na aba Pendente/Concluído da tabela.
+const STATUS_CONCLUIDO = "Fechado";
+function fechamentoConcluido(r) {
+  return r.Status === STATUS_CONCLUIDO;
+}
 
 // ── Normalização por fonte ──────────────────────────────────────────────
 // Radar Fiscal e Análise de Balanço são robôs/planilhas independentes com
@@ -184,11 +213,29 @@ function aplicarFiltros() {
 }
 
 function aplicarFiltroTabela() {
-  filtradosTabela = filtrarConjunto(dadosEscopo, {
+  const base = filtrarConjunto(dadosEscopo, {
     busca: el.tBusca, segmento: el.tSegmento, regime: el.tRegime,
     status: el.tStatus, documentacao: el.tDocumentacao, gerente: el.tGerente,
   });
+  filtradosTabela = base.filter((r) =>
+    abaTabelaAtiva === "Concluído" ? fechamentoConcluido(r) : !fechamentoConcluido(r)
+  );
   renderizarTabela();
+}
+
+// Só troca o estado + realce dos botões, sem re-renderizar (usado ao
+// entrar num escopo novo, junto com a limpeza de filtros).
+function definirAbaTabela(aba) {
+  abaTabelaAtiva = aba;
+  el.tabelaAbas.querySelectorAll(".tabela-aba").forEach((b) => {
+    b.classList.toggle("ativa", b.dataset.aba === aba);
+  });
+}
+
+function trocarAbaTabela(aba) {
+  if (aba === abaTabelaAtiva) return;
+  definirAbaTabela(aba);
+  aplicarFiltroTabela();
 }
 
 const ORDEM_DOCUMENTACAO = ["Documentação Recebida", "Documentação Pendente"];
@@ -304,30 +351,10 @@ function alternarFiltroEMostrarTabela(campo, valor) {
   el.tabelaSecao.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// Igual a alternarFiltroEMostrarTabela, mas fixa (ou desliga, se já estava
-// ativa a combinação inteira — mesmo toggle) vários campos de uma vez —
-// usado pelos níveis "de dentro" de um card (doc-grupo/status-linha), que
-// precisam combinar o próprio filtro com o do card "pai" (Tributação). Sem
-// isso, clicar em "Documentação Pendente: 2" dentro do card "Lucro Real"
-// filtrava só por Documentação, mostrando todas as pendentes de SP (7), não
-// as 2 respectivas daquele card.
-function filtrarPorVariosEMostrarTabela(pares) {
-  const jaEstavaAtivo = pares.every(([campo, valor]) => CAMPO_PARA_FILTROS[campo]()[0].value === valor);
-  limparFiltrosGerais();
-  if (!jaEstavaAtivo) {
-    pares.forEach(([campo, valor]) => {
-      CAMPO_PARA_FILTROS[campo]()[0].value = valor;
-    });
-  }
-  sincronizarFiltroTabelaComGeral();
-  aplicarFiltros();
-  aplicarFiltroTabela();
-  el.tabelaSecao.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-// Detalhamento de Documentação dentro de um card (quebra-card ou card de
-// navegação) — não tem handler de clique próprio: o clique é sempre do
-// card inteiro (ver quem chama esta função).
+// Detalhamento de Documentação dentro de um card. O clique do card inteiro
+// continua sendo o de navegar/filtrar; os `data-doc`/`data-status` abaixo
+// são pros handlers de modal que renderizarQuebraGrupo liga por cima (nas
+// linhas de detalhe) — inertes nos cards de navegação, que não ligam nada.
 function renderizarDocGrupo(docNome, d, totalCategoria) {
   const classe = docNome === "Documentação Recebida" ? "recebida" : "pendente";
   const pctDoc = totalCategoria ? (d.total / totalCategoria) * 100 : 0;
@@ -345,7 +372,7 @@ function renderizarDocGrupo(docNome, d, totalCategoria) {
       const pctStatus = totalCategoria ? (count / totalCategoria) * 100 : 0;
       const rotulo = rotuloStatus(status);
       return `
-        <div class="status-linha">
+        <div class="status-linha" data-status="${status.replace(/"/g, "&quot;")}">
           <span class="status-nome" title="${rotulo}">${rotulo}</span>
           <span class="status-valores"><b>${count.toLocaleString("pt-BR")}</b><span class="status-pct">${formatarPct(pctStatus)}</span></span>
         </div>
@@ -354,7 +381,7 @@ function renderizarDocGrupo(docNome, d, totalCategoria) {
     .join("");
 
   return `
-    <div class="doc-grupo ${classe}">
+    <div class="doc-grupo ${classe}" data-doc="${docNome.replace(/"/g, "&quot;")}">
       <div class="doc-cabecalho">
         <span class="doc-rotulo"><i class="ponto ${classe}"></i>${docNome}</span>
         <span class="doc-valores"><b>${d.total.toLocaleString("pt-BR")}</b><span class="doc-pct">${formatarPct(pctDoc)}</span></span>
@@ -449,13 +476,14 @@ function renderizarCardsUnidades(container, rows, aoClicar) {
 // mesma identidade visual do Portal de Tarefas. Reflete sempre o escopo
 // atual (unidade inteira, ou já recortado por departamento/segmento).
 function renderizarPlacares(rows) {
-  let recebida = 0;
-  let pendente = 0;
+  // Os cards do topo medem o andamento do FECHAMENTO (Status == "Fechado"),
+  // não a documentação recebida — pedido do usuário (2026-09-02).
+  let concluido = 0;
   rows.forEach((r) => {
-    if (r.Documentacao === "Documentação Recebida") recebida++;
-    else if (r.Documentacao === "Documentação Pendente") pendente++;
+    if (fechamentoConcluido(r)) concluido++;
   });
   const total = rows.length;
+  const pendente = total - concluido;
   // Arredondamento "honesto": só mostra 0%/100% quando for exatamente isso —
   // um valor pequeno mas não-zero nunca aparece como "0% do total", e um
   // valor quase igual ao total nunca aparece como "100%" sem ser exato
@@ -471,25 +499,28 @@ function renderizarPlacares(rows) {
   const escoposDesc = escopo.depto ? "do departamento" : "da unidade";
 
   const defs = [
-    { classe: "total", valor: total, label: "Total de Empresas", desc: escoposDesc, clicavel: false },
-    { classe: "recebida", valor: recebida, label: "Documentação Recebida", desc: pct(recebida), clicavel: false },
-    {
-      classe: "pendente", valor: pendente, label: "Documentação Pendente", desc: pct(pendente),
-      clicavel: true, campo: "Documentacao", filtroValor: "Documentação Pendente",
-    },
+    { classe: "total", valor: total, label: "Total de Empresas", desc: escoposDesc },
+    { classe: "concluido", valor: concluido, label: "Fechamento Concluído", desc: pct(concluido), aba: "Concluído" },
+    { classe: "pendente", valor: pendente, label: "Fechamento Pendente", desc: pct(pendente), aba: "Pendente" },
   ];
 
   el.placaresGrid.innerHTML = defs.map((p) => `
-    <div class="placar ${p.classe}${p.clicavel ? " placar-clicavel" : ""}"
-      ${p.clicavel ? `data-campo="${p.campo}" data-valor="${p.filtroValor}"` : ""}>
+    <div class="placar ${p.classe}${p.aba ? " placar-clicavel" : ""}"
+      ${p.aba ? `data-aba="${p.aba}"` : ""}>
       <div class="placar-label">${p.label}</div>
       <div class="placar-valor">${p.valor.toLocaleString("pt-BR")}</div>
       <div class="placar-desc">${p.desc}</div>
     </div>
   `).join("");
 
+  // Clicar num placar leva pra aba correspondente da tabela do fim da
+  // página e rola até ela (não seta um filtro — "pendente" é um conjunto
+  // de status, não um valor único de <select>).
   el.placaresGrid.querySelectorAll(".placar-clicavel").forEach((cardEl) => {
-    cardEl.addEventListener("click", () => alternarFiltroEMostrarTabela(cardEl.dataset.campo, cardEl.dataset.valor));
+    cardEl.addEventListener("click", () => {
+      trocarAbaTabela(cardEl.dataset.aba);
+      el.tabelaSecao.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   });
 }
 
@@ -517,6 +548,36 @@ function renderizarQuebraGrupo(container, campo, filtroEl) {
 
   container.querySelectorAll(".quebra-card").forEach((cardEl) => {
     cardEl.addEventListener("click", () => alternarFiltroEMostrarTabela(cardEl.dataset.campo, cardEl.dataset.valor));
+
+    // Linhas de detalhe dentro do card abrem o modal com aqueles registros
+    // (estilo do portal de SPED). stopPropagation pra não disparar também o
+    // clique do card (que filtra a tabela do fim).
+    const valorCard = cardEl.dataset.valor;
+    cardEl.querySelectorAll(".doc-grupo").forEach((grupoEl) => {
+      const docNome = grupoEl.dataset.doc;
+      const baseCard = () => filtrados.filter((r) => r[campo] === valorCard);
+
+      const cab = grupoEl.querySelector(".doc-cabecalho");
+      if (cab) {
+        cab.classList.add("linha-modal");
+        cab.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          abrirModal(baseCard().filter((r) => r.Documentacao === docNome), docNome, valorCard);
+        });
+      }
+
+      grupoEl.querySelectorAll(".status-linha").forEach((linhaEl) => {
+        const status = linhaEl.dataset.status;
+        linhaEl.classList.add("linha-modal");
+        linhaEl.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          abrirModal(
+            baseCard().filter((r) => r.Documentacao === docNome && r.Status === status),
+            rotuloStatus(status), `${valorCard} · ${docNome}`
+          );
+        });
+      });
+    });
   });
 }
 
@@ -562,15 +623,17 @@ function renderizarRankingGerentes() {
     })
     .join("");
 
-  // O número mostrado no ranking é só as pendências do gerente (c.pendente),
-  // não o total de clientes dele — o filtro precisa combinar Gerente +
-  // Documentação Pendente pra mostrar exatamente esse número na tabela
-  // (mesma correção de filtrarPorVariosEMostrarTabela acima).
+  // Clicar numa linha do ranking abre o modal com as pendências daquele
+  // gerente — exatamente o conjunto que gerou o número mostrado (c.pendente
+  // = Documentação != Recebida).
   el.rankingGerentes.querySelectorAll(".ranking-linha").forEach((linhaEl) => {
-    linhaEl.addEventListener("click", () => filtrarPorVariosEMostrarTabela([
-      ["Gerente", linhaEl.dataset.valor],
-      ["Documentacao", "Documentação Pendente"],
-    ]));
+    linhaEl.addEventListener("click", () => {
+      const nome = linhaEl.dataset.valor;
+      abrirModal(
+        filtrados.filter((r) => r.Gerente === nome && r.Documentacao !== "Documentação Recebida"),
+        nome, "Pendências do gerente"
+      );
+    });
   });
 }
 
@@ -591,29 +654,86 @@ function regimeCurto(texto) {
   return texto.replace(/^Federal\s*-\s*/, "");
 }
 
-function renderizarTabela() {
-  el.corpo.innerHTML = filtradosTabela
-    .map((r) => {
-      const doc = r.Documentacao;
-      const rotuloDoc = doc ? doc.replace("Documentação ", "") : "—";
-      return `
-        <tr>
-          <td>${nomeComId(r.Id, r.Cliente)}</td>
-          <td>${celula(r.Grupo)}</td>
-          <td>${celula(r.Unidade ? r.Unidade.toUpperCase() : r.Unidade)}</td>
-          <td>${celula(r.Segmento)}</td>
-          <td>${celula(r.Gerente)}</td>
-          <td>${celula(r.Departamento)}</td>
-          <td>${regimeCurto(r.Tributacao)}</td>
-          <td>${celula(rotuloStatus(r.Status))}</td>
-          <td>${rotuloDoc}</td>
-          <td title="${r.DocumentoPendente ? r.DocumentoPendente.replace(/"/g, "&quot;") : ""}">${celula(r.DocumentoPendente)}</td>
-        </tr>
-      `;
-    })
-    .join("");
+// Uma linha (<tr>) da tabela — compartilhada entre a tabela do fim da
+// página (renderizarTabela) e a tabela do modal (renderizarModalTabela),
+// pras duas terem exatamente as mesmas 10 colunas.
+function linhaTabelaHTML(r) {
+  const doc = r.Documentacao;
+  const rotuloDoc = doc ? doc.replace("Documentação ", "") : "—";
+  return `
+    <tr>
+      <td>${nomeComId(r.Id, r.Cliente)}</td>
+      <td>${celula(r.Grupo)}</td>
+      <td>${celula(r.Unidade ? r.Unidade.toUpperCase() : r.Unidade)}</td>
+      <td>${celula(r.Segmento)}</td>
+      <td>${celula(r.Gerente)}</td>
+      <td>${celula(r.Departamento)}</td>
+      <td>${regimeCurto(r.Tributacao)}</td>
+      <td>${celula(rotuloStatus(r.Status))}</td>
+      <td>${rotuloDoc}</td>
+      <td title="${r.DocumentoPendente ? r.DocumentoPendente.replace(/"/g, "&quot;") : ""}">${celula(r.DocumentoPendente)}</td>
+    </tr>
+  `;
+}
 
+function renderizarTabela() {
+  el.corpo.innerHTML = filtradosTabela.map(linhaTabelaHTML).join("");
   el.contagem.textContent = `${filtradosTabela.length.toLocaleString("pt-BR")} empresa(s)`;
+}
+
+// ── Modal: registros de uma linha de detalhe de um card ─────────────────
+// Aberto ao clicar num bloco de Documentação / linha de Status dentro de um
+// card "Por Tributação", ou numa linha do ranking por Gerente. Recebe o
+// subconjunto já recortado pelo contexto do clique (a partir de `filtrados`,
+// que já respeita os filtros gerais da tela) e oferece os MESMOS 6 filtros
+// da tela principal (pedido do usuário), agindo só sobre esse subconjunto —
+// mesmo padrão do portal de SPED.
+let modalRegistros = [];
+let modalContexto = "";
+
+function abrirModal(registros, titulo, contexto) {
+  modalRegistros = registros;
+  modalContexto = contexto || "";
+  el.modalTitulo.textContent = titulo || "Registros";
+
+  repopularSelect(el.mSegmento, new Set(registros.map((r) => r.Segmento).filter(Boolean)));
+  repopularSelect(el.mRegime, new Set(registros.map((r) => r.Tributacao).filter(Boolean)));
+  repopularSelect(el.mStatus, new Set(registros.map((r) => r.Status).filter(Boolean)), rotuloStatus);
+  repopularSelect(el.mDocumentacao, new Set(registros.map((r) => r.Documentacao).filter(Boolean)));
+  repopularSelect(el.mGerente, new Set(registros.map((r) => r.Gerente).filter(Boolean)));
+  el.mBusca.value = "";
+  el.mSegmento.value = "";
+  el.mRegime.value = "";
+  el.mStatus.value = "";
+  el.mDocumentacao.value = "";
+  el.mGerente.value = "";
+
+  renderizarModalTabela();
+  el.modal.classList.remove("oculto");
+  document.body.classList.add("modal-aberto");
+  el.mBusca.focus();
+}
+
+function renderizarModalTabela() {
+  const filtrados_ = filtrarConjunto(modalRegistros, {
+    busca: el.mBusca, segmento: el.mSegmento, regime: el.mRegime,
+    status: el.mStatus, documentacao: el.mDocumentacao, gerente: el.mGerente,
+  });
+  const temFiltro = el.mBusca.value.trim() || el.mSegmento.value || el.mRegime.value ||
+    el.mStatus.value || el.mDocumentacao.value || el.mGerente.value;
+  const contagem = temFiltro
+    ? `${filtrados_.length.toLocaleString("pt-BR")} de ${modalRegistros.length.toLocaleString("pt-BR")} empresa(s)`
+    : `${modalRegistros.length.toLocaleString("pt-BR")} empresa(s)`;
+  el.modalSub.textContent = [modalContexto, contagem].filter(Boolean).join(" · ");
+
+  el.modalCorpo.innerHTML = filtrados_.length
+    ? filtrados_.map(linhaTabelaHTML).join("")
+    : `<tr><td colspan="10" class="modal-vazio">Nenhum registro.</td></tr>`;
+}
+
+function fecharModal() {
+  el.modal.classList.add("oculto");
+  document.body.classList.remove("modal-aberto");
 }
 
 // Cada fonte tem seu próprio status.json (última execução do robô
@@ -861,6 +981,7 @@ function atualizarCorpoDashboard() {
 
   limparFiltrosGerais();
   limparFiltrosTabela();
+  definirAbaTabela("Pendente");
 
   repopularSelect(el.segmento, new Set(dadosEscopo.map((r) => r.Segmento).filter(Boolean)));
   repopularSelect(el.regime, new Set(dadosEscopo.map((r) => r.Tributacao).filter(Boolean)));
@@ -975,6 +1096,25 @@ elBtnTema.addEventListener("click", () => {
 });
 
 el.btnVoltarPainel.addEventListener("click", voltarUmaSecao);
+
+// Abas Pendente/Concluído da tabela do fim da página.
+el.tabelaAbas.querySelectorAll(".tabela-aba").forEach((botao) => {
+  botao.addEventListener("click", () => trocarAbaTabela(botao.dataset.aba));
+});
+
+// Modal: fecha no X, no clique fora da caixa e no Esc. Os 6 filtros dele
+// re-renderizam só a tabela do modal.
+el.modalFechar.addEventListener("click", fecharModal);
+el.modal.addEventListener("click", (evento) => {
+  if (evento.target === el.modal) fecharModal();
+});
+document.addEventListener("keydown", (evento) => {
+  if (evento.key === "Escape" && !el.modal.classList.contains("oculto")) fecharModal();
+});
+[el.mBusca, el.mSegmento, el.mRegime, el.mStatus, el.mDocumentacao, el.mGerente].forEach((campo) => {
+  campo.addEventListener("input", renderizarModalTabela);
+  campo.addEventListener("change", renderizarModalTabela);
+});
 
 // Re-renderiza "Evolução Diária" quando a largura do container muda (ex.:
 // redimensionar a janela) — o viewBox do gráfico é calculado a partir da

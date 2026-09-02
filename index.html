@@ -135,6 +135,10 @@
       </section>
 
       <section class="card tabela-card">
+        <div class="tabela-abas" id="tabela-abas" role="tablist">
+          <button type="button" class="tabela-aba ativa" data-aba="Pendente" role="tab">Pendente</button>
+          <button type="button" class="tabela-aba" data-aba="Concluído" role="tab">Concluído</button>
+        </div>
         <div class="tabela-scroll">
           <table id="tabela">
             <colgroup>
@@ -172,6 +176,82 @@
       </section>
     </div>
   </main>
+
+  <!-- Modal: registros de uma linha de detalhe de um card (bloco de
+       Documentação / linha de Status dentro de "Por Tributação", ou uma
+       linha do ranking por Gerente). Mesmo padrão do portal de SPED. Os
+       filtros aqui dentro são os mesmos 6 da tela principal, e agem só
+       sobre o subconjunto que abriu o modal. -->
+  <div class="modal-overlay oculto" id="modal-registros">
+    <div class="modal-caixa" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+      <div class="modal-cabecalho">
+        <div class="modal-cabecalho-info">
+          <h3 class="modal-titulo" id="modal-titulo"></h3>
+          <p class="modal-sub" id="modal-sub"></p>
+        </div>
+        <button type="button" class="modal-fechar" id="modal-fechar" aria-label="Fechar">&times;</button>
+      </div>
+      <div class="modal-filtros">
+        <div class="filtros-grid">
+          <div class="filtro-grupo filtro-grupo-busca">
+            <label class="filtro-label" for="m-busca">Buscar</label>
+            <input type="search" id="m-busca" class="filtro-input" placeholder="ID, cliente ou grupo...">
+          </div>
+          <div class="filtro-grupo">
+            <label class="filtro-label" for="m-segmento">Segmento</label>
+            <select id="m-segmento" class="filtro-select"><option value="">Todos</option></select>
+          </div>
+          <div class="filtro-grupo">
+            <label class="filtro-label" for="m-regime">Tributação</label>
+            <select id="m-regime" class="filtro-select"><option value="">Todas</option></select>
+          </div>
+          <div class="filtro-grupo">
+            <label class="filtro-label" for="m-status">Status</label>
+            <select id="m-status" class="filtro-select"><option value="">Todos</option></select>
+          </div>
+          <div class="filtro-grupo">
+            <label class="filtro-label" for="m-documentacao">Documentação</label>
+            <select id="m-documentacao" class="filtro-select"><option value="">Todas</option></select>
+          </div>
+          <div class="filtro-grupo">
+            <label class="filtro-label" for="m-gerente">Gerente de Contas</label>
+            <select id="m-gerente" class="filtro-select"><option value="">Todos</option></select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-corpo">
+        <table class="modal-tabela">
+          <colgroup>
+            <col style="width: 15%">
+            <col style="width: 9%">
+            <col style="width: 6%">
+            <col style="width: 7%">
+            <col style="width: 9%">
+            <col style="width: 8%">
+            <col style="width: 8%">
+            <col style="width: 9%">
+            <col style="width: 9%">
+            <col style="width: 20%">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>Grupo</th>
+              <th>Unidade</th>
+              <th>Segmento</th>
+              <th>Gerente de Contas</th>
+              <th>Departamento</th>
+              <th>Tributação</th>
+              <th>Status</th>
+              <th>Documentação</th>
+              <th>Documento Pendente</th>
+            </tr>
+          </thead>
+          <tbody id="modal-corpo"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
   <script src="static/script.js"></script>
 </body>
