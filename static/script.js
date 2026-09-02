@@ -549,30 +549,21 @@ function renderizarQuebraGrupo(container, campo, filtroEl) {
   container.querySelectorAll(".quebra-card").forEach((cardEl) => {
     cardEl.addEventListener("click", () => alternarFiltroEMostrarTabela(cardEl.dataset.campo, cardEl.dataset.valor));
 
-    // Linhas de detalhe dentro do card abrem o modal com aqueles registros
-    // (estilo do portal de SPED). stopPropagation pra não disparar também o
-    // clique do card (que filtra a tabela do fim).
+    // Cada linha de Status dentro do card abre o modal com aqueles registros,
+    // exatamente como o portal de SPED (linha de estágio -> modal). O
+    // cabeçalho do bloco de Documentação não é clicável (idem SPED, onde o
+    // cabeçalho "Entregue"/"Pendente" também não abre nada). stopPropagation
+    // pra não disparar também o clique do card (que filtra a tabela do fim).
     const valorCard = cardEl.dataset.valor;
     cardEl.querySelectorAll(".doc-grupo").forEach((grupoEl) => {
       const docNome = grupoEl.dataset.doc;
-      const baseCard = () => filtrados.filter((r) => r[campo] === valorCard);
-
-      const cab = grupoEl.querySelector(".doc-cabecalho");
-      if (cab) {
-        cab.classList.add("linha-modal");
-        cab.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          abrirModal(baseCard().filter((r) => r.Documentacao === docNome), docNome, valorCard);
-        });
-      }
-
       grupoEl.querySelectorAll(".status-linha").forEach((linhaEl) => {
         const status = linhaEl.dataset.status;
         linhaEl.classList.add("linha-modal");
         linhaEl.addEventListener("click", (ev) => {
           ev.stopPropagation();
           abrirModal(
-            baseCard().filter((r) => r.Documentacao === docNome && r.Status === status),
+            filtrados.filter((r) => r[campo] === valorCard && r.Documentacao === docNome && r.Status === status),
             rotuloStatus(status), `${valorCard} · ${docNome}`
           );
         });
@@ -681,13 +672,13 @@ function renderizarTabela() {
   el.contagem.textContent = `${filtradosTabela.length.toLocaleString("pt-BR")} empresa(s)`;
 }
 
-// ── Modal: registros de uma linha de detalhe de um card ─────────────────
-// Aberto ao clicar num bloco de Documentação / linha de Status dentro de um
-// card "Por Tributação", ou numa linha do ranking por Gerente. Recebe o
-// subconjunto já recortado pelo contexto do clique (a partir de `filtrados`,
-// que já respeita os filtros gerais da tela) e oferece os MESMOS 6 filtros
-// da tela principal (pedido do usuário), agindo só sobre esse subconjunto —
-// mesmo padrão do portal de SPED.
+// ── Modal: registros de uma linha de detalhe ───────────────────────────
+// Idêntico ao portal de Análise de Entrega de SPED. Aberto ao clicar numa
+// linha de Status dentro de um card "Por Tributação", ou numa linha do
+// ranking por Gerente. Recebe o subconjunto já recortado pelo contexto do
+// clique (a partir de `filtrados`, que já respeita os filtros gerais da
+// tela) e oferece os MESMOS 6 filtros da tela principal, reusando
+// `filtrarConjunto()`, agindo só sobre esse subconjunto.
 let modalRegistros = [];
 let modalContexto = "";
 
@@ -715,12 +706,13 @@ function abrirModal(registros, titulo, contexto) {
 }
 
 function renderizarModalTabela() {
-  const filtrados_ = filtrarConjunto(modalRegistros, {
+  const camposModal = {
     busca: el.mBusca, segmento: el.mSegmento, regime: el.mRegime,
     status: el.mStatus, documentacao: el.mDocumentacao, gerente: el.mGerente,
-  });
-  const temFiltro = el.mBusca.value.trim() || el.mSegmento.value || el.mRegime.value ||
-    el.mStatus.value || el.mDocumentacao.value || el.mGerente.value;
+  };
+  const filtrados_ = filtrarConjunto(modalRegistros, camposModal);
+
+  const temFiltro = Object.values(camposModal).some((c) => c.value.trim() !== "");
   const contagem = temFiltro
     ? `${filtrados_.length.toLocaleString("pt-BR")} de ${modalRegistros.length.toLocaleString("pt-BR")} empresa(s)`
     : `${modalRegistros.length.toLocaleString("pt-BR")} empresa(s)`;

@@ -191,33 +191,16 @@
         </div>
         <button type="button" class="modal-fechar" id="modal-fechar" aria-label="Fechar">&times;</button>
       </div>
+      <!-- Mesmos filtros da tela principal (busca, Segmento, Tributação,
+           Status, Documentação, Gerente), na mesma ordem — reusam
+           filtrarConjunto(). -->
       <div class="modal-filtros">
-        <div class="filtros-grid">
-          <div class="filtro-grupo filtro-grupo-busca">
-            <label class="filtro-label" for="m-busca">Buscar</label>
-            <input type="search" id="m-busca" class="filtro-input" placeholder="ID, cliente ou grupo...">
-          </div>
-          <div class="filtro-grupo">
-            <label class="filtro-label" for="m-segmento">Segmento</label>
-            <select id="m-segmento" class="filtro-select"><option value="">Todos</option></select>
-          </div>
-          <div class="filtro-grupo">
-            <label class="filtro-label" for="m-regime">Tributação</label>
-            <select id="m-regime" class="filtro-select"><option value="">Todas</option></select>
-          </div>
-          <div class="filtro-grupo">
-            <label class="filtro-label" for="m-status">Status</label>
-            <select id="m-status" class="filtro-select"><option value="">Todos</option></select>
-          </div>
-          <div class="filtro-grupo">
-            <label class="filtro-label" for="m-documentacao">Documentação</label>
-            <select id="m-documentacao" class="filtro-select"><option value="">Todas</option></select>
-          </div>
-          <div class="filtro-grupo">
-            <label class="filtro-label" for="m-gerente">Gerente de Contas</label>
-            <select id="m-gerente" class="filtro-select"><option value="">Todos</option></select>
-          </div>
-        </div>
+        <input type="search" id="m-busca" class="filtro-input" placeholder="ID, cliente ou grupo...">
+        <select id="m-segmento" class="filtro-select"><option value="">Todos os segmentos</option></select>
+        <select id="m-regime" class="filtro-select"><option value="">Todas as tributações</option></select>
+        <select id="m-status" class="filtro-select"><option value="">Todos os status</option></select>
+        <select id="m-documentacao" class="filtro-select"><option value="">Toda a documentação</option></select>
+        <select id="m-gerente" class="filtro-select"><option value="">Todos os gerentes</option></select>
       </div>
       <div class="modal-corpo">
         <table class="modal-tabela">
