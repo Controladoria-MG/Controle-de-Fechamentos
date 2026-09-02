@@ -155,7 +155,7 @@ main {
 /* Tipo de relatório (Radar Fiscal / Análise de Balanço) */
 
 .tipo-relatorio-card {
-  padding: 12px 20px;
+  padding: 8px 20px;
 }
 
 .tipo-relatorio-abas {
@@ -323,9 +323,9 @@ main {
 
 .unidades-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 24px;
-  max-width: 980px;
+  max-width: 680px;
   margin: 0 auto;
 }
 

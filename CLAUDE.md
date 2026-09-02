@@ -71,6 +71,14 @@ INTRANET_SENHA=
 ```
 **Nunca commitar** — está no `.gitignore`. `orquestrador.py` relê esse arquivo e sobrescreve `radar_fiscal.USUARIO`/`SENHA` e `retorno_checklist.USUARIO`/`SENHA` antes de cada execução (`_recarregar_credenciais()`) — defesa contra `load_dotenv(override=False)` quando este orquestrador roda dentro de um processo compartilhado com outros robôs (hub "Atualização de bases").
 
+### Automação em segundo plano (2026-08-31)
+Os 3 robôs rodam sem tomar o mouse/teclado nem mostrar janela na tela, com estas exceções inevitáveis:
+- **`retorno_checklist.py`**: Chrome `--headless=new`, invisível.
+- **`radar_fiscal.py`**: `.invoke()`/`PostMessage` + `_ocultar_janela()` (estaciona as janelas em -32000,-32000). Piscam só: o launcher "MG Apps" (visível o tempo todo), 1 clique real no tile "Sistema de Analise" (WPF, não responde a UIA), e o diálogo nativo "Salvar como" (poucos segundos — mover ele trava o salvamento).
+- **`radar_fechamento.py`**: `_ocultar_janela()` na janela "Análise de Balanço" logo após abrir — o filtro de competência roda escondido. Pra o menu "Arquivo" > "Exportar" a janela volta pra tela por ~2s (`_restaurar_janela` + `click_input` real: o flyout WPF não processa PostMessage de forma confiável — 0/3 num probe) e é escondida de novo assim que o diálogo abre. O diálogo nativo "Selecionar pasta" fica visível o tempo de apontar o destino — o caminho é posto no campo `auto_id="1152"` sem digitar (`_colar_no_campo`: `set_edit_text` → colar via clipboard → digitar). Tile "Analise Balanço" do launcher = clique real, igual ao Radar Fiscal.
+
+Numa máquina só, o usuário não consegue ter a sessão do robô e a dele ao mesmo tempo (Win 11 Pro = 1 sessão interativa). Pra rodar 100% invisível durante o expediente: RDP desconectado numa 2ª máquina/VM, ou agendar fora do horário.
+
 ### MGApps/Análise de Balanço: fechar sempre, em 3 camadas (2026-08-21, calibração ao vivo)
 Rodar os dois robôs em sequência expôs bugs de estado que não existiam rodando cada um sozinho: os dois automatizam o mesmo launcher desktop "MG Apps" e originalmente reaproveitavam a janela se já estivesse aberta. Rodando em sequência isso causava falha em cascata — o segundo robô herdava uma janela "quente"/num estado inesperado e travava clicando em tiles. Corrigido em 3 camadas (a pedido explícito do usuário, em mensagens separadas — "fechar antes de rodar o segundo robô", depois "checar no início também se MG Apps e Análise de Balanço estão abertos"):
 1. **`_abrir_mgapps()` em `radar_fiscal.py` e `radar_fechamento.py`** — sempre fecha o "MG Apps" existente (`_fechar_mgapps_se_existir()`) e abre um novo, nunca reaproveita. Mesmo raciocínio que `_fechar_analise_balanco_se_existir()` já usava pra não reaproveitar uma janela "Análise de Balanço" com estado desconhecido.
