@@ -371,8 +371,9 @@ function alternarFiltroEMostrarTabela(campo, valor) {
 
 // Detalhamento de Documentação dentro de um card. O clique do card inteiro
 // continua sendo o de navegar/filtrar; os `data-doc`/`data-status` abaixo
-// são pros handlers de modal que renderizarQuebraGrupo liga por cima (nas
-// linhas de detalhe) — inertes nos cards de navegação, que não ligam nada.
+// são pros handlers de modal que `ligarModalNosCards()` liga por cima (nas
+// linhas de detalhe) — tanto nos cards "Por Tributação" quanto nos de
+// navegação "Por Departamento"/"Por Segmento".
 function renderizarDocGrupo(docNome, d, totalCategoria) {
   const classe = docNome === "Documentação Recebida" ? "recebida" : "pendente";
   const pctDoc = totalCategoria ? (d.total / totalCategoria) * 100 : 0;
@@ -413,10 +414,11 @@ function renderizarDocGrupo(docNome, d, totalCategoria) {
   `;
 }
 
-// ── Cards de navegação (telas de Unidade e de Departamento/Segmento) ────
+// ── Cards de navegação (tela de Departamento/Segmento) ─────────────────
 // Reaproveita a mesma aparência dos quebra-card (com o detalhamento de
-// Documentação já pronto em renderizarDocGrupo), só que o clique no card
-// inteiro navega pra outra tela em vez de filtrar.
+// Documentação já pronto em renderizarDocGrupo). O clique no card inteiro
+// navega pra outra tela; as linhas de Status dentro dele abrem o modal
+// (ligarModalNosCards), igual aos cards "Por Tributação" e ao portal de SPED.
 function renderizarCardsNavegacao(container, rows, chave, aoClicar, mensagemVazio, formatarNome = (v) => v) {
   const grupos = contarDetalhado(rows, chave);
   if (!grupos.length) {
@@ -444,6 +446,7 @@ function renderizarCardsNavegacao(container, rows, chave, aoClicar, mensagemVazi
   container.querySelectorAll(".nav-card").forEach((cardEl) => {
     cardEl.addEventListener("click", () => aoClicar(cardEl.dataset.valor));
   });
+  ligarModalNosCards(container, rows, chave);
 }
 
 // Tela 1 (Painel de Controle) — igual ao Portal de Tarefas: só o nome da
@@ -547,6 +550,34 @@ function renderizarPlacares(rows) {
   });
 }
 
+// Liga o modal nas linhas de Status dentro de cada card do container —
+// mesmo `ligarCliquesMotivo()` do portal de SPED. Clicar numa `.status-linha`
+// abre o modal com os registros daquele grupo (campo `chave` == valor do
+// card) + Documentação + Status. `stopPropagation` pra não disparar também
+// o clique do card (filtrar a tabela nos "Por Tributação", navegar nos
+// cards "Por Departamento"/"Por Segmento"). O cabeçalho `.doc-cabecalho`
+// não é clicável (idem SPED). `rows` é a base do recorte — `filtrados` nos
+// cards "Por Tributação", as linhas da unidade nos cards de navegação.
+function ligarModalNosCards(container, rows, chave) {
+  container.querySelectorAll(".quebra-card").forEach((cardEl) => {
+    const valorCard = cardEl.dataset.valor;
+    cardEl.querySelectorAll(".doc-grupo").forEach((grupoEl) => {
+      const docNome = grupoEl.dataset.doc;
+      grupoEl.querySelectorAll(".status-linha").forEach((linhaEl) => {
+        const status = linhaEl.dataset.status;
+        linhaEl.classList.add("linha-modal");
+        linhaEl.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          abrirModal(
+            rows.filter((r) => r[chave] === valorCard && r.Documentacao === docNome && r.Status === status),
+            rotuloStatus(status), `${valorCard} · ${docNome}`
+          );
+        });
+      });
+    });
+  });
+}
+
 function renderizarQuebraGrupo(container, campo, filtroEl) {
   const grupos = contarDetalhado(filtrados, campo);
   const selecionado = filtroEl.value;
@@ -571,28 +602,8 @@ function renderizarQuebraGrupo(container, campo, filtroEl) {
 
   container.querySelectorAll(".quebra-card").forEach((cardEl) => {
     cardEl.addEventListener("click", () => alternarFiltroEMostrarTabela(cardEl.dataset.campo, cardEl.dataset.valor));
-
-    // Cada linha de Status dentro do card abre o modal com aqueles registros,
-    // exatamente como o portal de SPED (linha de estágio -> modal). O
-    // cabeçalho do bloco de Documentação não é clicável (idem SPED, onde o
-    // cabeçalho "Entregue"/"Pendente" também não abre nada). stopPropagation
-    // pra não disparar também o clique do card (que filtra a tabela do fim).
-    const valorCard = cardEl.dataset.valor;
-    cardEl.querySelectorAll(".doc-grupo").forEach((grupoEl) => {
-      const docNome = grupoEl.dataset.doc;
-      grupoEl.querySelectorAll(".status-linha").forEach((linhaEl) => {
-        const status = linhaEl.dataset.status;
-        linhaEl.classList.add("linha-modal");
-        linhaEl.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          abrirModal(
-            filtrados.filter((r) => r[campo] === valorCard && r.Documentacao === docNome && r.Status === status),
-            rotuloStatus(status), `${valorCard} · ${docNome}`
-          );
-        });
-      });
-    });
   });
+  ligarModalNosCards(container, filtrados, campo);
 }
 
 function renderizarQuebras() {
@@ -742,7 +753,7 @@ function renderizarModalTabela() {
 
   el.modalCorpo.innerHTML = filtrados_.length
     ? filtrados_.map(linhaTabelaHTML).join("")
-    : `<tr><td colspan="10" class="modal-vazio">Nenhum registro.</td></tr>`;
+    : `<tr><td colspan="9" class="modal-vazio">Nenhum registro.</td></tr>`;
 }
 
 function fecharModal() {
