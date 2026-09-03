@@ -243,6 +243,17 @@ def _recarregar_credenciais(log):
     retorno_checklist.USUARIO = env.get("INTRANET_USUARIO", retorno_checklist.USUARIO)
     retorno_checklist.SENHA = env.get("INTRANET_SENHA", retorno_checklist.SENHA)
 
+    # Os 2 extratores do Checklist Contábil leem a conta própria com fallback
+    # pra INTRANET_* — replicamos o fallback aqui pra valer também quando o
+    # .env muda sem reiniciar (e quando o processo é compartilhado com o hub).
+    # checklist_em_aberto PRECISA da conta pessoal (relatório "(Meu)...").
+    intranet_u = env.get("INTRANET_USUARIO", "")
+    intranet_s = env.get("INTRANET_SENHA", "")
+    checklist_ctb_extrator.USUARIO = env.get("CHECKLIST_CTB_USUARIO") or intranet_u or checklist_ctb_extrator.USUARIO
+    checklist_ctb_extrator.SENHA = env.get("CHECKLIST_CTB_SENHA") or intranet_s or checklist_ctb_extrator.SENHA
+    checklist_em_aberto.USUARIO = env.get("CHECKLIST_ABERTO_USUARIO") or intranet_u or checklist_em_aberto.USUARIO
+    checklist_em_aberto.SENHA = env.get("CHECKLIST_ABERTO_SENHA") or intranet_s or checklist_em_aberto.SENHA
+
 
 def executar(log=None) -> pd.DataFrame:
     def _log(msg):
