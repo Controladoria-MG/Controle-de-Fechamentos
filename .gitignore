@@ -2,6 +2,13 @@
 __pycache__/
 *.log
 .venv/
+
+# Os robôs (orquestrador + Radar Fiscal / Análise de Balanço / checklists)
+# rodam só localmente, pelo hub "Atualização de bases" (que carrega o
+# backend/ local por caminho). Não fazem parte do dashboard estático
+# publicado — ficam fora do repo. Os arquivos continuam no disco.
+backend/
+
 data/relatorio_fechamentos/*.xlsx
 # Pastas de trabalho intermediárias dos robôs — regeneradas a cada execução
 # (o orquestrador copia o que o portal precisa pra data/relatorio_fechamentos/,
