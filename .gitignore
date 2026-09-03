@@ -3,6 +3,16 @@ __pycache__/
 *.log
 .venv/
 data/relatorio_fechamentos/*.xlsx
-data/radar_fiscal/*.xlsx
-data/analise_balanco/*.xlsx
-data/analise_balanco/_temp/
+# Pastas de trabalho intermediárias dos robôs — regeneradas a cada execução
+# (o orquestrador copia o que o portal precisa pra data/relatorio_fechamentos/,
+# que é a única versionada).
+data/radar_fiscal/
+data/analise_balanco/
+
+# Scripts/relatórios que o usuário larga na raiz pra análise — nunca
+# versionar (CTV.py/CTB.py têm credenciais em texto; os relatórios são
+# binários grandes).
+/CTB.py
+/Baixar_Checklist_CTB.py
+/relat*.xlsx
+/Checklist_Contabil_*.xlsx

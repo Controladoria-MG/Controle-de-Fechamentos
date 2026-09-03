@@ -20,9 +20,10 @@ let tipoRelatorioAtivo = null;
 let escopo = { unidade: null, depto: null };
 let filtrados = [];
 let filtradosTabela = [];
-// Aba ativa da tabela do fim da página: "Pendente" (Status != Fechado) ou
-// "Concluído" (Status == Fechado). Corte adicional em cima dos 6 filtros
-// da tabela — mesma ideia das abas do Portal de Tarefas.
+// Aba ativa da tabela do fim da página: "Pendente" (Documentação Pendente)
+// ou "Concluído" (Documentação Recebida) — ver documentacaoRecebida().
+// Corte adicional em cima dos 6 filtros da tabela — mesma ideia das abas
+// do Portal de Tarefas.
 let abaTabelaAtiva = "Pendente";
 
 const el = {
@@ -76,14 +77,16 @@ const el = {
   mGerente: document.getElementById("m-gerente"),
 };
 
-// Um fechamento só conta como "concluído" quando o Status é "Fechado"
-// (mesmo valor literal nas duas fontes) — decisão do usuário (2026-09-02).
-// Qualquer outro Status (Simulando, Não importado, Com o GC, Bloqueado,
-// Importado Contábil) entra como pendente. Usado nos cards totalizadores
-// (placares) e na aba Pendente/Concluído da tabela.
-const STATUS_CONCLUIDO = "Fechado";
-function fechamentoConcluido(r) {
-  return r.Status === STATUS_CONCLUIDO;
+// Os placares do topo e as abas Pendente/Concluído da tabela seguem a
+// coluna "Documentação" — o usuário quer que a aba SEMPRE bata com o que a
+// coluna mostra (2026-09-03: "quando for pendente, esteja na aba pendente;
+// quando for concluído/recebido, na aba concluída"). Pra Análise de Balanço
+// a Documentação vem da tarefa de retorno do checklist em aberto
+// (_juntar_checklist_ctb no backend); pro Radar Fiscal, de
+// corrigirDocumentacao(). Antes (2026-09-02) isso media o Status "Fechado";
+// mudou porque a coluna Documentação passou a ser um sinal confiável.
+function documentacaoRecebida(r) {
+  return r.Documentacao === "Documentação Recebida";
 }
 
 // ── Normalização por fonte ──────────────────────────────────────────────
@@ -110,11 +113,15 @@ function corrigirDocumentacao(status, documentacao, statusNaoImportado) {
   return documentacao;
 }
 
-// A "Planilha de Mercados" traz um comentário livre sobre a pendência de
-// fechamento de cada empresa (coluna "PENDENCIAS FECHAMENTO") — só existe
-// pro Radar Fiscal (só SP/GOIAS passam pela Planilha de Mercados) e o
-// backend já garante que só vem preenchido quando "ÍA" == "A" (pedido do
-// usuário, 2026-08-25 — ver máscara em radar_fiscal.py::_processar_resumo).
+// Texto livre com a pendência de documento de cada empresa. As duas fontes
+// preenchem de lugares diferentes, mesmo destino (coluna "Documento
+// Pendente" da tabela / modal):
+//  - Radar Fiscal: coluna "PENDENCIAS FECHAMENTO" da Planilha de Mercados
+//    (só SP/GOIAS passam por ela; backend só preenche quando "ÍA" == "A" —
+//    ver máscara em radar_fiscal.py::_processar_resumo).
+//  - Análise de Balanço: motivos do Retorno do Checklist Contábil
+//    concatenados por cliente (um Tipo de documento por linha) — ver
+//    backend/checklist_ctb.py, junção por IdCliente em orquestrador.py.
 function formatarDocumentoPendente(texto) {
   const limpo = (texto || "").trim();
   return limpo || null;
@@ -148,10 +155,21 @@ function normalizarAnaliseBalanco(r) {
     Gerente: r.Gerente,
     Tributacao: r.Tributacao,
     Status: r.Status,
-    Documentacao: corrigirDocumentacao(r.Status, r["Documentação"], "Não Importado"),
+    // A Análise de Balanço NÃO passa por corrigirDocumentacao(): desde
+    // 2026-09-03 a `Documentação` da AB é decidida no backend
+    // (_juntar_checklist_ctb) pela tarefa de retorno do checklist em aberto —
+    // "Pendente" = tem tarefa em aberto, independente do Status. Rodar a
+    // regra de Status por cima re-quebrava os clientes em aberto com Status
+    // "Fechado"/"Com o GC" (mostrava "Recebida" mesmo com documento pendente).
+    Documentacao: r["Documentação"],
     Departamento: undefined,
     DataReferencia: r.DataImportacao,
-    DocumentoPendente: undefined,
+    // Motivos do Checklist Contábil concatenados por cliente (ver
+    // backend/checklist_ctb.py). O backend (_juntar_checklist_ctb em
+    // orquestrador.py) já limita esse texto aos clientes com tarefa de
+    // retorno do checklist EM ABERTO (regra do usuário, 2026-09-02) — aqui
+    // só exibimos o que vier no JSON.
+    DocumentoPendente: formatarDocumentoPendente(r.DocumentoPendente),
     TipoRelatorio: "Análise de Balanço",
   };
 }
@@ -218,7 +236,7 @@ function aplicarFiltroTabela() {
     status: el.tStatus, documentacao: el.tDocumentacao, gerente: el.tGerente,
   });
   filtradosTabela = base.filter((r) =>
-    abaTabelaAtiva === "Concluído" ? fechamentoConcluido(r) : !fechamentoConcluido(r)
+    abaTabelaAtiva === "Concluído" ? documentacaoRecebida(r) : !documentacaoRecebida(r)
   );
   renderizarTabela();
 }
@@ -359,12 +377,16 @@ function renderizarDocGrupo(docNome, d, totalCategoria) {
   const classe = docNome === "Documentação Recebida" ? "recebida" : "pendente";
   const pctDoc = totalCategoria ? (d.total / totalCategoria) * 100 : 0;
   const chaveNaoImportado = statusOrdem()[statusOrdem().length - 1];
-  // Documentação Pendente: depois da correção em corrigirDocumentacao()
-  // (Fechado + Pendente vira Recebida), a única situação que sobra de
-  // verdade é "Não importado" — listar os outros 4 status aqui seria
-  // sempre zero e irrelevante, por isso mostra só essa linha.
+  // Documentação Pendente: no Radar Fiscal, depois de corrigirDocumentacao()
+  // (Fechado + Pendente vira Recebida), só sobra "Não importado" — as outras
+  // linhas seriam sempre zero. Na Análise de Balanço (desde 2026-09-03) a
+  // pendência vem da tarefa de retorno do checklist em aberto e pode
+  // coexistir com qualquer Status, então mostramos a linha "não importado"
+  // mais qualquer outro Status que realmente tenha registro.
   const statusOrdenado = classe === "pendente"
-    ? [[chaveNaoImportado, d.status.get(chaveNaoImportado) || 0]]
+    ? statusOrdem()
+        .filter((s) => s === chaveNaoImportado || (d.status.get(s) || 0) > 0)
+        .map((s) => [s, d.status.get(s) || 0])
     : statusOrdem().filter((s) => s !== chaveNaoImportado).map((s) => [s, d.status.get(s) || 0]);
 
   const linhasStatus = statusOrdenado
@@ -476,11 +498,12 @@ function renderizarCardsUnidades(container, rows, aoClicar) {
 // mesma identidade visual do Portal de Tarefas. Reflete sempre o escopo
 // atual (unidade inteira, ou já recortado por departamento/segmento).
 function renderizarPlacares(rows) {
-  // Os cards do topo medem o andamento do FECHAMENTO (Status == "Fechado"),
-  // não a documentação recebida — pedido do usuário (2026-09-02).
+  // Os cards do topo seguem a coluna "Documentação" (ver documentacaoRecebida)
+  // — a aba da tabela do fim usa o mesmo corte, então clicar num placar cai
+  // sempre numa aba com o mesmo número (pedido do usuário, 2026-09-03).
   let concluido = 0;
   rows.forEach((r) => {
-    if (fechamentoConcluido(r)) concluido++;
+    if (documentacaoRecebida(r)) concluido++;
   });
   const total = rows.length;
   const pendente = total - concluido;
@@ -500,8 +523,8 @@ function renderizarPlacares(rows) {
 
   const defs = [
     { classe: "total", valor: total, label: "Total de Empresas", desc: escoposDesc },
-    { classe: "concluido", valor: concluido, label: "Fechamento Concluído", desc: pct(concluido), aba: "Concluído" },
-    { classe: "pendente", valor: pendente, label: "Fechamento Pendente", desc: pct(pendente), aba: "Pendente" },
+    { classe: "concluido", valor: concluido, label: "Documentação Recebida", desc: pct(concluido), aba: "Concluído" },
+    { classe: "pendente", valor: pendente, label: "Documentação Pendente", desc: pct(pendente), aba: "Pendente" },
   ];
 
   el.placaresGrid.innerHTML = defs.map((p) => `
@@ -658,7 +681,6 @@ function linhaTabelaHTML(r) {
       <td>${celula(r.Unidade ? r.Unidade.toUpperCase() : r.Unidade)}</td>
       <td>${celula(r.Segmento)}</td>
       <td>${celula(r.Gerente)}</td>
-      <td>${celula(r.Departamento)}</td>
       <td>${regimeCurto(r.Tributacao)}</td>
       <td>${celula(rotuloStatus(r.Status))}</td>
       <td>${rotuloDoc}</td>

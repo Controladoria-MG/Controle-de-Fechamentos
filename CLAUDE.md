@@ -39,11 +39,14 @@ Raiz/
 │       ├── status.json                   (execução combinada — total das duas fontes)
 │       └── resumo.xlsx                   (as duas fontes juntas, schema normalizado — gerado só pelo orquestrador, não versionado)
 └── backend/
-    ├── radar_fiscal.py       (robô 1 — MGApps "Sistema de Analise", pywinauto)
-    ├── radar_fechamento.py   (robô 2a — MGApps "Analise Balanço", pywinauto)
-    ├── retorno_checklist.py  (robô 2b — Intranet, selenium)
-    ├── resumo.py             (junta radar_fechamento + retorno_checklist)
-    └── orquestrador.py       (roda tudo, gera o Excel único e os JSONs do portal)
+    ├── radar_fiscal.py            (robô 1 — MGApps "Sistema de Analise", pywinauto)
+    ├── radar_fechamento.py        (robô 2a — MGApps "Analise Balanço", pywinauto)
+    ├── retorno_checklist.py       (robô 2b — Intranet, selenium — flag Documentação Pendente/Recebida)
+    ├── checklist_ctb_extrator.py  (robô 2c — Intranet, selenium — baixa o "Checklist Contábil > Recebimento")
+    ├── checklist_em_aberto.py     (robô 2d — Intranet, selenium — "(Meu)checklist contabil em aberto")
+    ├── checklist_ctb.py           (consolida o relatório CTB: 1 linha por cliente, motivos concatenados)
+    ├── resumo.py                  (junta radar_fechamento + retorno_checklist)
+    └── orquestrador.py            (roda tudo, gera o Excel único e os JSONs do portal)
 ```
 
 ---
@@ -68,6 +71,8 @@ MGAPPS_USUARIO=      # não usado hoje (radar_fechamento.py reaproveita sessão 
 MGAPPS_SENHA=
 INTRANET_USUARIO=    # login da Intranet (retorno_checklist.py)
 INTRANET_SENHA=
+CHECKLIST_CTB_USUARIO=  # conta do app "Checklist Contábil" (checklist_ctb_extrator.py); vazio = usa INTRANET_*
+CHECKLIST_CTB_SENHA=
 ```
 **Nunca commitar** — está no `.gitignore`. `orquestrador.py` relê esse arquivo e sobrescreve `radar_fiscal.USUARIO`/`SENHA` e `retorno_checklist.USUARIO`/`SENHA` antes de cada execução (`_recarregar_credenciais()`) — defesa contra `load_dotenv(override=False)` quando este orquestrador roda dentro de um processo compartilhado com outros robôs (hub "Atualização de bases").
 
@@ -105,11 +110,29 @@ Radar Fiscal e Análise de Balanço têm nomes de coluna diferentes pra conceito
 | `Documentacao` | `Documentação` | `Documentação` |
 | `Departamento` | `DeptoFiscal` | *(não existe)* |
 | `DataReferencia` | `DataConfirmacao` | `DataImportacao` |
-| `DocumentoPendente` | `DocumentoPendente` (só frontend, ver abaixo) | *(não existe)* |
+| `DocumentoPendente` | `"Planilha de Mercados.PENDENCIAS FECHAMENTO"` (máscara `ÍA=="A"`) | Checklist Contábil consolidado, junção por `IdCliente` |
 
-`DocumentoPendente` só existe no frontend (não tem coluna equivalente no `resumo.xlsx`/Excel único) — vem da coluna `"PENDENCIAS FECHAMENTO"` da Planilha de Mercados (só SP/GOIAS passam por ela, ver `UNIDADES_MERCADOS`), trazida pro JSON do portal já com esse nome (rename em `_gerar_json_portal`) e passada por `formatarDocumentoPendente()` no frontend (só remove espaço em branco nas pontas). **Regra de negócio, pedida pelo usuário (2026-08-25)**: só faz sentido mostrar essa pendência quando `"ÍA" == "A"` — confirmado com os dados reais de teste: "PENDENCIAS FECHAMENTO" tinha texto em 132 linhas com `ÍA` variado, mas só as 2 linhas com `ÍA == "A"` deviam contar. **É coluna da tabela** (`Documento Pendente`, última coluna) — chegou a ser tirada a pedido do usuário e depois recolocada na mesma sessão (2026-08-25).
+### Coluna "Documento Pendente" — fontes diferentes por lado (2026-09-02)
+É a última coluna da tabela / do modal. As duas fontes preenchem de lugares diferentes; mesmo destino (`DocumentoPendente` no schema normalizado).
 
-**Atenção (2026-08-25)**: a pasta `backend/` (todos os `.py` do robô — `radar_fiscal.py`, `radar_fechamento.py`, `retorno_checklist.py`, `resumo.py`, `orquestrador.py`) foi removida do repositório fora desta conversa (confirmado pelo usuário como intencional) — a máscara `ÍA == "A"` descrita acima **não existe mais no código atual**, só no histórico do git (commit `75f5058` e anteriores). Se o robô/backend voltar a existir (reescrito ou restaurado do histórico), reaplicar essa máscara em `_processar_resumo()`.
+**Radar Fiscal**: coluna `"PENDENCIAS FECHAMENTO"` da Planilha de Mercados (só SP/GOIAS passam por ela, `UNIDADES_MERCADOS`). Máscara `"ÍA" == "A"` em `radar_fiscal.py::_processar_resumo` — só as linhas com ÍA=="A" ficam com texto (pedido do usuário 2026-08-25, **re-confirmado 2026-09-02** — ele chegou a cogitar trocar pra `DOC. PENDENTE CHECKLIST` e voltou atrás; a planilha tem as duas colunas). Rename pra `DocumentoPendente` em `_gerar_json_portal`.
+
+**Análise de Balanço**: combinação de DOIS relatórios da Intranet, além do `retorno_checklist.py` que já existia.
+- `backend/checklist_ctb_extrator.py` — baixa "Checklist Contábil > Relatórios > Recebimento" (uma linha por documento pendente de cada cliente) pra `data/analise_balanco/checklist_ctb.xlsx`. Adaptado do `CTB.py` que o usuário largou na raiz (fixes: `--headless=new`, `.env`, competência como parâmetro, download pra `data/`). Conta: `CHECKLIST_CTB_USUARIO/SENHA`, cai pra `INTRANET_*`.
+- `backend/checklist_em_aberto.py` — baixa "(Meu)checklist contabil em aberto" (MG Controle > Relatórios > Personalizados). Diz quais clientes têm tarefa de retorno do checklist EM ABERTO. Conta: `CHECKLIST_ABERTO_USUARIO/SENHA` — **precisa ser a conta pessoal `warruda`** (relatório "(Meu)...", só aparece na lista de Personalizados do próprio dono). Expõe `clientes_em_aberto() -> set[int]`.
+- `backend/checklist_ctb.py` — consolida o relatório de Recebimento em 1 linha por `IdCliente`, motivos concatenados no **formato "Tipo agrupado"** (escolha do usuário): um `Tipo` por linha; várias `Descricao` do mesmo Tipo viram lista com `; `; descrição vazia/igual ao Tipo é descartada.
+- `orquestrador.py::_juntar_checklist_ctb` — LEFT JOIN por `IdCliente`, mas **só preenche `DocumentoPendente` pros clientes que estão em `clientes_em_aberto()`** (regra do usuário 2026-09-02: "só quando a tarefa de retorno do checklist estiver em aberto"). Sem o relatório de em-aberto, a coluna fica vazia (não dá pra aplicar a regra). Nenhum dos dois arquivos ausente derruba o pipeline (try/except no `executar()`, dentro de um loop pelos 2 extratores).
+
+**Estado da validação ao vivo (2026-09-03):**
+- `checklist_ctb_extrator.py` — **✅ rodou de primeira** (2026-09-02) com o fallback `INTRANET_*`. Baixou 8.953 linhas (aba "Pendências CTB", 19 colunas), `checklist_ctb.py` consolidou pra 1.502 clientes. Navegação toda validada.
+- `checklist_em_aberto.py` — **✅ VALIDADO (2026-09-03)** com `CHECKLIST_ABERTO_USUARIO=warruda` no `.env`. Competência 08/2026 → 754 tarefas "Retorno do Check-List" em aberto, 754 `CodCliente` únicos. Os 3 chutes bateram: `XPATH_MENU_RELATORIO` casou o item, aba = `"Pendencias"` (o xlsx tem também `"Totalizador"`), coluna-chave = `"CodCliente"`. `clientes_em_aberto()` retorna as 754.
+- `orquestrador.py` completo — **✅ RODOU PONTA A PONTA (2026-09-03, 3ª tentativa)**. As 2 primeiras falharam no login do "Sistema de Analise" (`SENHA` do `.env` estava desatualizada — o usuário tinha editado `MGAPPS_SENHA`, que **nenhum código lê**; o certo é a linha `SENHA=`). Resultado: 2.095 Radar Fiscal + 2.134 Análise de Balanço = 4.229; `resumo.xlsx` gerado; JSONs do portal regenerados com `DocumentoPendente`. Checklist CTB: 1.495 no recebimento, 754 em aberto, **740 preenchidos** na AB.
+
+**Exibição LIGADA no frontend (2026-09-03)**: `normalizarAnaliseBalanco` em `static/script.js` usa `DocumentoPendente: formatarDocumentoPendente(r.DocumentoPendente)`.
+
+**Ainda NÃO commitado** (2026-09-03) — depois da reforma de "Documentação Recebida sem tarefa em aberto" (ver seção acima), regenerei só o `analise_balanco_dados.json` a partir dos `.xlsx` já baixados pela execução completa (sem reabrir automação). Falta: validar visualmente, rodar o `orquestrador.py` completo mais uma vez (pra o `resumo.xlsx` também pegar a regra nova) OU aceitar que o Excel só normaliza na próxima execução, e commitar tudo junto. `.gitignore` já cobre `/CTB.py`, `/Baixar_Checklist_CTB.py`, `/relat*.xlsx`, `/Checklist_Contabil_*.xlsx`, `_temp_ctb/`, `_temp_aberto/`.
+
+`formatarDocumentoPendente()` no frontend só remove espaço nas pontas.
 
 `Segmento` e `Documentação` já têm o mesmo nome e os mesmos 2 valores nas duas fontes — não precisam de mapeamento. **Atenção**: o Radar Fiscal usa `"Gerente de Contas"` (com espaço) no `resumo.xlsx`, e só vira `GerenteContas` no JSON do portal (rename feito dentro do próprio `radar_fiscal.py`, `_gerar_json_portal`) — `orquestrador.py` lê direto do `resumo.xlsx`/DataFrame retornado por `radar_fiscal.executar()`, então usa o nome com espaço.
 
@@ -117,7 +140,7 @@ Radar Fiscal e Análise de Balanço têm nomes de coluna diferentes pra conceito
 A página inteira (navegação de Unidade/Departamento, filtros, cards, ranking, evolução, tabela) sempre mostra só um Tipo de Relatório por vez (`tipoRelatorioAtivo`), escolhido em `#tipo-relatorio-abas`. Trocar de aba (`selecionarTipoRelatorio()`) volta pro Painel de Unidades, reseta todos os filtros e repopula cada `<select>` só com os valores daquele escopo (`repopularSelect()`).
 
 Diferenças reais entre as fontes que a UI precisa esconder/adaptar ao trocar de aba:
-1. **Departamento só existe no Radar Fiscal.** É a "2ª dimensão" de navegação (`QUEBRA_CONFIG_POR_TIPO[tipo].segunda`) — "Por Departamento" no Radar Fiscal, "Por Segmento" na Análise de Balanço (reaproveita a mesma coluna do filtro geral "Segmento"). A coluna "Departamento" da tabela **fica sempre visível** (mostra "—" nas linhas da Análise de Balanço) — decisão consciente pra não arriscar desalinhar `<colgroup>`/`<td>` escondendo célula por célula (`display:none` num `<td>` isolado quebra a contagem de colunas do `table-layout: fixed`).
+1. **Departamento só existe no Radar Fiscal.** É a "2ª dimensão" de navegação (`QUEBRA_CONFIG_POR_TIPO[tipo].segunda`) — "Por Departamento" no Radar Fiscal, "Por Segmento" na Análise de Balanço (reaproveita a mesma coluna do filtro geral "Segmento"). O campo `Departamento` continua no schema normalizado (`normalizarRadarFiscal`, de `DeptoFiscal`) só pra essa navegação. **A coluna "Departamento" foi removida da tabela e do modal (2026-09-03)** — o usuário pediu ("tire essa coluna") porque ficava sempre "—" nas linhas da Análise de Balanço. Tabela/modal agora têm **9 colunas** (Cliente, Grupo, Unidade, Segmento, Gerente de Contas, Tributação, Status, Documentação, Documento Pendente); `<colgroup>` dos dois ajustado pra somar 100%.
 2. **Os 5 valores reais de `Status`** são diferentes nas duas fontes, cada uma com uma categoria sem equivalente na outra (Radar Fiscal: "Bloqueado"; Análise de Balanço: "Importado Contábil") — por isso `STATUS_ORDEM_POR_TIPO` é por Tipo, não uma lista global única. `STATUS_ROTULOS_POR_TIPO` só ajusta a grafia da Análise de Balanço pra bater com o Radar Fiscal onde o significado é o mesmo (`"OK - Com GC"→"Com o GC"`, `"Não Importado"→"Não importado"`), também usada no filtro/rótulo de tabela (`rotuloStatus()`), não só nos cards. O último item de cada lista em `STATUS_ORDEM_POR_TIPO` é sempre o equivalente a "não importado" — usado por `renderizarDocGrupo()` (ver regra de Documentação abaixo).
 
 O resto (ranking por Gerente, "Evolução Diária" por `DataReferencia`, tabela, cards "Por Tributação") é **código idêntico** pras duas fontes — só funciona porque os nomes já estão normalizados.
@@ -130,23 +153,41 @@ Pedido do usuário: "todas as empresas [com documentação pendente] precisam es
 
 Como consequência, `renderizarDocGrupo()` simplifica o card de "Documentação Pendente" pra mostrar só 1 linha de status (a "não importado" da fonte) em vez das 5 — as outras seriam sempre zero.
 
+### Análise de Balanço: a Documentação é decidida pela tarefa de retorno do checklist em aberto (2026-09-03)
+Pedidos do usuário, dois no mesmo dia:
+1. "não tem como uma tarefa pendente não ter documentação — quando não houver tarefa de retorno do checklist, considera a documentação recebida".
+2. (ao ver o cliente 6989 ATRIA, Status "Fechado", com tarefa em aberto, aparecendo como "Recebida") "como a tarefa está como recebida e tem documentação pendente? essa tarefa está em aberta na base".
+
+Antes a AB marcava `"Documentação Pendente"` só por o Status ser `"Não Importado"`. Agora a **`Documentação` da Análise de Balanço = a tarefa de retorno do checklist**:
+- `IdCliente` ∈ `checklist_em_aberto.clientes_em_aberto()` → `"Documentação Pendente"` (independente do Status — a tarefa está aberta).
+- `IdCliente` ∉ em aberto → `"Documentação Recebida"`.
+
+Aplicado em `_juntar_checklist_ctb()` (junto com o `DocumentoPendente`), então **entra no `analise_balanco_dados.json` do portal** e flui pro `resumo.xlsx`. Efeito 2026-09-03: 944 linhas viraram Recebida; `Documentação Pendente` = exatamente os ~747 com tarefa em aberto. Só vale quando o relatório "em aberto" existe (mesma guarda do `DocumentoPendente`).
+
+**A regra de Status (2026-08-25) não vale mais pra AB.** `corrigirDocumentacao()` no frontend agora **só é chamada em `normalizarRadarFiscal`** — `normalizarAnaliseBalanco` usa `r["Documentação"]` direto (o backend já resolveu). `_corrigir_documentacao_inconsistente()` no backend ganhou um filtro `TipoRelatorio == "Radar Fiscal"`. Sem isso, a regra de Status re-quebrava os ~5 clientes em aberto com Status ≠ "Não Importado" (2 Com GC / 2 Fechado / 1 Excluído), voltando a mostrá-los como "Recebida" — exatamente a queixa do cliente 6989.
+
+`renderizarDocGrupo()` no card "Documentação Pendente" agora mostra a linha "não importado" **mais** qualquer outro Status com contagem > 0 (antes era só a "não importado", que pro Radar Fiscal segue sendo a única não-zero).
+
+- **Casos que ainda mostram "Pendente" + "—"** (Documento Pendente vazio): ~7 clientes que TÊM tarefa em aberto mas não têm nenhuma linha no relatório de Recebimento. A regra do usuário não cobre esses (eles têm tarefa). Deixados como estão.
+
 ### `backend/orquestrador.py` — fluxo
 1. `_recarregar_credenciais()` — relê `.env`, sobrescreve `radar_fiscal.USUARIO`/`SENHA` e `retorno_checklist.USUARIO`/`SENHA`.
 2. Checagem de janelas abertas (MG Apps + Análise de Balanço) de uma execução anterior.
 3. `radar_fiscal.executar(log)` → `df_radar`. Fecha MG Apps de novo.
-4. `radar_fechamento.executar(log)` → `arquivo_radar_fechamento`; `retorno_checklist.executar(log)` → `arquivo_checklist`; `resumo.gerar_resumo(...)` → `df_balanco`. Gera `analise_balanco_dados.json`/`status.json` em `data/analise_balanco/` (réplica do que o antigo `Analise-de-Balanco/backend/orquestrador.py` fazia — este projeto não tem mais aquele orquestrador intermediário).
+4. `radar_fechamento.executar(log)` → `arquivo_radar_fechamento`; `retorno_checklist.executar(log)` → `arquivo_checklist`; `resumo.gerar_resumo(...)` → `df_balanco`. Depois `checklist_ctb_extrator.executar(log)` baixa o Checklist Contábil (**try/except — não bloqueia o pipeline** se cair) e `_juntar_checklist_ctb()` faz o LEFT JOIN da coluna `DocumentoPendente` por `IdCliente`. Gera `analise_balanco_dados.json`/`status.json` em `data/analise_balanco/` (réplica do que o antigo `Analise-de-Balanco/backend/orquestrador.py` fazia — este projeto não tem mais aquele orquestrador intermediário).
 5. Copia os JSONs/status de `data/radar_fiscal/` e `data/analise_balanco/` pra `data/relatorio_fechamentos/`.
 6. Junta os dois (normalizados) num `resumo.xlsx` único.
 7. Escreve `status.json` combinado.
 
-### Cards totalizadores (placares) medem o FECHAMENTO (2026-09-02)
-Os 3 placares do topo (`renderizarPlacares`): **Total de Empresas / Fechamento Concluído / Fechamento Pendente**. "Concluído" = `Status === "Fechado"` (valor literal idêntico nas duas fontes — `fechamentoConcluido()`/`STATUS_CONCLUIDO`); todo o resto (Simulando, Não importado, Com o GC, Bloqueado, Importado Contábil) entra em "Pendente". `Concluído + Pendente = Total`. Antes os cards mediam Documentação Recebida/Pendente — o usuário pediu a troca ("estão contabilizando o tanto de documento recebido, e não o quanto do fechamento já está concluído"). Concluído/Pendente são clicáveis: **trocam a aba da tabela do fim da página** (Concluído/Pendente) e rolam até ela — não setam um filtro de `<select>` ("pendente" é um conjunto de status, não um valor único).
+### Placares e abas Pendente/Concluído seguem a coluna Documentação (2026-09-03)
+**Histórico**: em 2026-09-02 os placares passaram a medir o FECHAMENTO (`Status === "Fechado"`) em vez da documentação, a pedido do usuário. Em 2026-09-03, com a coluna "Documentação" da Análise de Balanço virando um sinal confiável (tarefa de retorno do checklist em aberto), o usuário pediu que **a aba da tabela sempre bata com a coluna Documentação da linha** ("quando for pendente, esteja na aba pendente; quando for concluído/recebido, na aba concluída — não tem segredo"). Então voltaram a seguir a documentação:
 
-### Abas Pendente / Concluído da tabela do fim (2026-09-02)
-`#tabela-abas` dentro de `.tabela-card`, mesma ideia das abas do Portal de Tarefas. `abaTabelaAtiva` ("Pendente"|"Concluído") é um corte adicional aplicado em `aplicarFiltroTabela()` **depois** dos 6 filtros da tabela: Pendente = `!fechamentoConcluido(r)`, Concluído = `fechamentoConcluido(r)`. `definirAbaTabela()` só troca estado+realce (usado no reset ao entrar em escopo novo, junto com a limpeza de filtros — sempre volta pra "Pendente"); `trocarAbaTabela()` troca + re-renderiza. Os cliques nos cards "Por Tributação" continuam filtrando essa tabela normalmente (a aba é um recorte por cima).
+Os 3 placares do topo (`renderizarPlacares`): **Total de Empresas / Documentação Recebida / Documentação Pendente**. O corte é `documentacaoRecebida(r)` = `r.Documentacao === "Documentação Recebida"` (schema já normalizado). `fechamentoConcluido()`/`STATUS_CONCLUIDO` **foram removidos**. Recebida/Pendente são clicáveis: trocam a aba da tabela do fim (mesmo `data-aba` "Concluído"/"Pendente" — só os rótulos dos placares mudaram) e rolam até ela.
+
+`#tabela-abas`: `abaTabelaAtiva` ("Pendente"|"Concluído") é um corte em `aplicarFiltroTabela()` **depois** dos 6 filtros: Pendente = `!documentacaoRecebida(r)`, Concluído = `documentacaoRecebida(r)`. Como o placar e a aba usam o mesmo predicado, clicar num placar sempre cai numa aba com o mesmo número. `definirAbaTabela()` (reset, volta pra "Pendente") vs `trocarAbaTabela()` (troca + re-renderiza). Os `data-aba` internos continuam "Pendente"/"Concluído"; os `<button>` no HTML seguem rotulados "Pendente"/"Concluído".
 
 ### Modal de registros (2026-09-02) — IDÊNTICO ao portal de Análise de Entrega de SPED
-Pedido literal do usuário: "o modal precisa ser exatamente igual o do Análise e Entrega de SPED". HTML/CSS/JS do modal copiados 1:1 de `Analise-de-Entrega-de-SPED/` — mesma `.modal-caixa`/`.modal-cabecalho`/`.modal-filtros` (flexbox plano, sem `.filtros-grid`/`.filtro-label` — só `<input>` + `<select>`s diretos, com placeholders descritivos "Todos os segmentos" etc.), mesmo `.modal-tabela th` (fundo cinza-claro `--bg-card-alt`, uppercase, NÃO vermelho), mesmo `.status-linha.linha-modal:hover` (texto fica vermelho, sem tint de fundo — igual `.status-linha-estagio` lá). Ao replicar o modal do SPED aqui, adaptar só o que é específico do domínio: os **6 filtros** (Buscar, Segmento, Tributação, Status, Documentação, Gerente — `#m-*`) e as **10 colunas** (as da tabela do fim deste projeto, via `linhaTabelaHTML()` compartilhada) — cada modal espelha a tabela principal do seu próprio portal.
+Pedido literal do usuário: "o modal precisa ser exatamente igual o do Análise e Entrega de SPED". HTML/CSS/JS do modal copiados 1:1 de `Analise-de-Entrega-de-SPED/` — mesma `.modal-caixa`/`.modal-cabecalho`/`.modal-filtros` (flexbox plano, sem `.filtros-grid`/`.filtro-label` — só `<input>` + `<select>`s diretos, com placeholders descritivos "Todos os segmentos" etc.), mesmo `.modal-tabela th` (fundo cinza-claro `--bg-card-alt`, uppercase, NÃO vermelho), mesmo `.status-linha.linha-modal:hover` (texto fica vermelho, sem tint de fundo — igual `.status-linha-estagio` lá). Ao replicar o modal do SPED aqui, adaptar só o que é específico do domínio: os **6 filtros** (Buscar, Segmento, Tributação, Status, Documentação, Gerente — `#m-*`) e as **9 colunas** (as da tabela do fim deste projeto, via `linhaTabelaHTML()` compartilhada — "Departamento" foi removida em 2026-09-03) — cada modal espelha a tabela principal do seu próprio portal.
 
 `#modal-registros` abre ao clicar numa **linha de Status dentro de um card "Por Tributação"** (`.status-linha`, com `stopPropagation`) ou numa **linha do ranking por Gerente**. O cabeçalho do bloco de Documentação (`.doc-cabecalho`) **não** é clicável — igual ao SPED, onde o cabeçalho "Entregue"/"Pendente" também não abre nada. Recebe o subconjunto recortado pelo contexto do clique (a partir de `filtrados`, que já respeita os filtros gerais da tela); os 6 filtros do modal reusam `filtrarConjunto()` e agem só sobre esse subconjunto. Fecha no X, clique fora e Esc. `abrirModal(registros, titulo, contexto)` / `renderizarModalTabela()` / `fecharModal()`. Cards de **navegação** (grid de Departamento/Segmento, cards de Unidade) não ligam esses handlers — `renderizarDocGrupo()` emite `data-doc`/`data-status` sempre, mas só `renderizarQuebraGrupo()` liga os cliques por cima.
 

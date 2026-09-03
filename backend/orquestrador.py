@@ -18,6 +18,9 @@ from pathlib import Path
 import pandas as pd
 from dotenv import dotenv_values, load_dotenv
 
+import checklist_ctb
+import checklist_ctb_extrator
+import checklist_em_aberto
 import radar_fechamento
 import radar_fiscal
 import resumo as resumo_balanco  # nome evita colisão com o "resumo" (df final) deste arquivo
@@ -45,7 +48,7 @@ ARQUIVO_RESUMO_BALANCO = PASTA_DADOS_BALANCO / "resumo.xlsx"
 
 COLUNAS_PORTAL_BALANCO = [
     "IdCliente", "Cliente", "Grupo", "Unidade", "Segmento", "Gerente",
-    "Tributacao", "Status", "Documentação", "DataImportacao",
+    "Tributacao", "Status", "Documentação", "DataImportacao", "DocumentoPendente",
 ]
 
 
@@ -67,6 +70,64 @@ def _serializar(valor):
     if isinstance(valor, pd.Timestamp):
         return valor.isoformat()
     return valor
+
+
+def _juntar_checklist_ctb(df_balanco: pd.DataFrame, log_msg) -> pd.DataFrame:
+    """Preenche a coluna `DocumentoPendente` dos registros da Análise de
+    Balanço a partir do Checklist Contábil (ver backend/checklist_ctb.py),
+    por LEFT JOIN em `IdCliente`, e ajusta a coluna `Documentação` pela mesma
+    fonte (ver abaixo).
+
+    Regra do usuário (2026-09-02): o texto de `DocumentoPendente` só vale
+    pros clientes com tarefa de retorno do checklist EM ABERTO (relatório
+    "(Meu)checklist contabil em aberto", ver backend/checklist_em_aberto.py).
+    Sem esse relatório não dá pra aplicar a regra — então a coluna fica
+    vazia e a `Documentação` não é mexida.
+
+    Regra do usuário (2026-09-03): "não tem como uma tarefa pendente não ter
+    documentação" — se o cliente NÃO tem tarefa de retorno do checklist em
+    aberto, não há de onde vir uma pendência de documento, então a
+    `Documentação` dele é considerada "Documentação Recebida" (a Análise de
+    Balanço marcava "Documentação Pendente" só por o Status ser "Não
+    Importado", sem lastro num documento faltando de verdade).
+
+    Nenhum dos dois arquivos ausente derruba o pipeline."""
+    df_balanco = df_balanco.copy()
+    df_balanco["DocumentoPendente"] = pd.NA
+    ids = pd.to_numeric(df_balanco["IdCliente"], errors="coerce")
+
+    caminho = checklist_ctb.ARQUIVO_RELATORIO
+    if not caminho.exists():
+        log_msg(f"Checklist CTB: {caminho.name} não encontrado — DocumentoPendente ficará vazio.")
+        return df_balanco
+
+    abertos = checklist_em_aberto.clientes_em_aberto()
+    if not abertos:
+        log_msg(
+            "Checklist em aberto: relatório ausente — sem a regra 'tarefa em aberto', "
+            "DocumentoPendente não é preenchido nem a Documentação é ajustada."
+        )
+        return df_balanco
+
+    tem_tarefa = ids.isin(abertos)
+
+    consolidado = checklist_ctb.gerar_consolidado(caminho)
+    mapa = consolidado.set_index("IdCliente")["DocumentoPendente"]
+    df_balanco["DocumentoPendente"] = ids.map(mapa).where(tem_tarefa)
+
+    # Sem tarefa de retorno do checklist em aberto → documentação recebida.
+    doc_ajustada = int(
+        (~tem_tarefa & (df_balanco["Documentação"] != "Documentação Recebida")).sum()
+    )
+    df_balanco.loc[~tem_tarefa, "Documentação"] = "Documentação Recebida"
+
+    casaram = int(df_balanco["DocumentoPendente"].notna().sum())
+    log_msg(
+        f"Checklist CTB: {len(consolidado)} cliente(s) no relatório de recebimento, "
+        f"{len(abertos)} com tarefa em aberto, {casaram} preenchidos na Análise de Balanço; "
+        f"{doc_ajustada} linha(s) sem tarefa em aberto viraram Documentação Recebida."
+    )
+    return df_balanco
 
 
 def _gerar_json_analise_balanco(df: pd.DataFrame, caminho: Path) -> None:
@@ -100,6 +161,11 @@ def _normalizar_radar_fiscal(df: pd.DataFrame) -> pd.DataFrame:
         "Documentação": df["Documentação"],
         "Departamento": df["DeptoFiscal"],
         "DataReferencia": df["DataConfirmacao"],
+        # No Radar Fiscal vem da Planilha de Mercados (já mascarada por ÍA=="A"
+        # em radar_fiscal._processar_resumo); na Análise de Balanço vem do
+        # Retorno do Checklist Contábil (checklist_ctb.py). Mesmo destino:
+        # coluna DocumentoPendente do portal.
+        "DocumentoPendente": df.get("Planilha de Mercados.PENDENCIAS FECHAMENTO"),
     })
 
 
@@ -117,6 +183,7 @@ def _normalizar_analise_balanco(df: pd.DataFrame) -> pd.DataFrame:
         "Documentação": df["Documentação"],
         "Departamento": None,
         "DataReferencia": df["DataImportacao"],
+        "DocumentoPendente": df.get("DocumentoPendente"),
     })
 
 
@@ -142,10 +209,20 @@ def _corrigir_documentacao_inconsistente(df: pd.DataFrame) -> pd.DataFrame:
     "Documentação Recebida". Mesma regra replicada em
     static/script.js::corrigirDocumentacao() pro portal — lá o schema já
     normalizado usa a coluna "Documentacao" (sem cedilha/til), aqui ainda é
-    "Documentação" (schema normalizado deste módulo)."""
+    "Documentação" (schema normalizado deste módulo).
+
+    **Só Radar Fiscal** (2026-09-03): a Análise de Balanço passou a decidir
+    a `Documentação` pela tarefa de retorno do checklist em aberto
+    (_juntar_checklist_ctb) — lá "Pendente" pode coexistir com qualquer
+    Status (a tarefa está aberta), então a regra de Status não vale mais
+    pra ela."""
     pendente = df["Documentação"] == "Documentação Pendente"
     status_esperado = df["TipoRelatorio"].map(STATUS_NAO_IMPORTADO_POR_TIPO)
-    inconsistente = pendente & (df["Status"] != status_esperado)
+    inconsistente = (
+        (df["TipoRelatorio"] == "Radar Fiscal")
+        & pendente
+        & (df["Status"] != status_esperado)
+    )
     df.loc[inconsistente, "Documentação"] = "Documentação Recebida"
     return df
 
@@ -205,6 +282,22 @@ def executar(log=None) -> pd.DataFrame:
         arquivo_radar_fechamento = radar_fechamento.executar(log)
         arquivo_checklist = retorno_checklist.executar(log)
         df_balanco = resumo_balanco.gerar_resumo(arquivo_radar_fechamento, arquivo_checklist, ARQUIVO_RESUMO_BALANCO)
+
+        # Baixa o "Checklist Contábil > Recebimento" (detalhe do documento
+        # pendente de cada cliente). Se falhar — credencial faltando, portal
+        # fora do ar — o pipeline segue e a coluna DocumentoPendente fica
+        # vazia (não é bloqueante).
+        for nome, extrator in (
+            ("Checklist Contábil (Recebimento)", checklist_ctb_extrator),
+            ("Checklist Contábil em Aberto", checklist_em_aberto),
+        ):
+            try:
+                _log(f"Baixando {nome}...")
+                extrator.executar(log=_log)
+            except Exception as erro_ext:  # noqa: BLE001 — não pode derrubar o pipeline
+                _log(f"{nome}: extração falhou ({erro_ext}). DocumentoPendente pode ficar vazio.")
+
+        df_balanco = _juntar_checklist_ctb(df_balanco, _log)
         _log(f"Análise de Balanço: {len(df_balanco)} registros.")
 
         PASTA_DADOS_BALANCO.mkdir(parents=True, exist_ok=True)
