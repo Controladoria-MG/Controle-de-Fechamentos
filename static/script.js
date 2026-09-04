@@ -45,6 +45,8 @@ const el = {
   busca: document.getElementById("f-busca"),
   segmento: document.getElementById("f-segmento"),
   regime: document.getElementById("f-regime"),
+  prioridade: document.getElementById("f-prioridade"),
+  docSituacao: document.getElementById("f-doc-situacao"),
   status_: document.getElementById("f-status"),
   documentacao: document.getElementById("f-documentacao"),
   gerente: document.getElementById("f-gerente"),
@@ -58,6 +60,8 @@ const el = {
   tBusca: document.getElementById("t-busca"),
   tSegmento: document.getElementById("t-segmento"),
   tRegime: document.getElementById("t-regime"),
+  tPrioridade: document.getElementById("t-prioridade"),
+  tDocSituacao: document.getElementById("t-doc-situacao"),
   tStatus: document.getElementById("t-status"),
   tDocumentacao: document.getElementById("t-documentacao"),
   tGerente: document.getElementById("t-gerente"),
@@ -74,6 +78,8 @@ const el = {
   mBusca: document.getElementById("m-busca"),
   mSegmento: document.getElementById("m-segmento"),
   mRegime: document.getElementById("m-regime"),
+  mPrioridade: document.getElementById("m-prioridade"),
+  mDocSituacao: document.getElementById("m-doc-situacao"),
   mStatus: document.getElementById("m-status"),
   mDocumentacao: document.getElementById("m-documentacao"),
   mGerente: document.getElementById("m-gerente"),
@@ -131,6 +137,11 @@ function normalizarLinha(r) {
     Departamento: r.Departamento || undefined,
     DataReferencia: r.DataReferencia,
     DocumentoPendente: formatarDocumentoPendente(r.DocumentoPendente),
+    // Prioridade / DocumentosSituacao vêm do Relatório de Distribuição
+    // (LEFT JOIN no backend, ver orquestrador.py::_juntar_distribuicao) —
+    // célula vazia do SheetJS já chega null, celula() trata na exibição.
+    Prioridade: r.Prioridade,
+    DocumentosSituacao: r.DocumentosSituacao,
     TipoRelatorio: r.TipoRelatorio,
   };
 }
@@ -162,6 +173,8 @@ function filtrarConjunto(conjunto, campos) {
   const busca = campos.busca.value.trim().toLowerCase();
   const segmento = campos.segmento.value;
   const regime = campos.regime.value;
+  const prioridade = campos.prioridade.value;
+  const docSituacao = campos.docSituacao.value;
   const status = campos.status.value;
   const documentacao = campos.documentacao.value;
   const gerente = campos.gerente.value;
@@ -169,6 +182,8 @@ function filtrarConjunto(conjunto, campos) {
   return conjunto.filter((r) => {
     if (segmento && r.Segmento !== segmento) return false;
     if (regime && r.Tributacao !== regime) return false;
+    if (prioridade && r.Prioridade !== prioridade) return false;
+    if (docSituacao && r.DocumentosSituacao !== docSituacao) return false;
     if (gerente && r.Gerente !== gerente) return false;
     if (status && r.Status !== status) return false;
     if (documentacao && r.Documentacao !== documentacao) return false;
@@ -183,6 +198,7 @@ function filtrarConjunto(conjunto, campos) {
 function aplicarFiltros() {
   filtrados = filtrarConjunto(dadosEscopo, {
     busca: el.busca, segmento: el.segmento, regime: el.regime,
+    prioridade: el.prioridade, docSituacao: el.docSituacao,
     status: el.status_, documentacao: el.documentacao, gerente: el.gerente,
   });
 
@@ -194,6 +210,7 @@ function aplicarFiltros() {
 function aplicarFiltroTabela() {
   const base = filtrarConjunto(dadosEscopo, {
     busca: el.tBusca, segmento: el.tSegmento, regime: el.tRegime,
+    prioridade: el.tPrioridade, docSituacao: el.tDocSituacao,
     status: el.tStatus, documentacao: el.tDocumentacao, gerente: el.tGerente,
   });
   filtradosTabela = base.filter((r) =>
@@ -291,6 +308,8 @@ function formatarPct(n) {
 const CAMPO_PARA_FILTROS = {
   Segmento: () => [el.segmento, el.tSegmento],
   Tributacao: () => [el.regime, el.tRegime],
+  Prioridade: () => [el.prioridade, el.tPrioridade],
+  DocumentosSituacao: () => [el.docSituacao, el.tDocSituacao],
   Status: () => [el.status_, el.tStatus],
   Documentacao: () => [el.documentacao, el.tDocumentacao],
   Gerente: () => [el.gerente, el.tGerente],
@@ -312,6 +331,8 @@ function sincronizarFiltroTabelaComGeral() {
   el.tBusca.value = el.busca.value;
   el.tSegmento.value = el.segmento.value;
   el.tRegime.value = el.regime.value;
+  el.tPrioridade.value = el.prioridade.value;
+  el.tDocSituacao.value = el.docSituacao.value;
   el.tStatus.value = el.status_.value;
   el.tDocumentacao.value = el.documentacao.value;
   el.tGerente.value = el.gerente.value;
@@ -642,7 +663,7 @@ function regimeCurto(texto) {
 
 // Uma linha (<tr>) da tabela — compartilhada entre a tabela do fim da
 // página (renderizarTabela) e a tabela do modal (renderizarModalTabela),
-// pras duas terem exatamente as mesmas 10 colunas.
+// pras duas terem exatamente as mesmas 11 colunas.
 function linhaTabelaHTML(r) {
   const doc = r.Documentacao;
   const rotuloDoc = doc ? doc.replace("Documentação ", "") : "—";
@@ -654,6 +675,8 @@ function linhaTabelaHTML(r) {
       <td>${celula(r.Segmento)}</td>
       <td>${celula(r.Gerente)}</td>
       <td>${regimeCurto(r.Tributacao)}</td>
+      <td>${celula(r.Prioridade)}</td>
+      <td>${celula(r.DocumentosSituacao)}</td>
       <td>${celula(rotuloStatus(r.Status))}</td>
       <td>${rotuloDoc}</td>
       <td title="${r.DocumentoPendente ? r.DocumentoPendente.replace(/"/g, "&quot;") : ""}">${celula(r.DocumentoPendente)}</td>
@@ -683,12 +706,16 @@ function abrirModal(registros, titulo, contexto) {
 
   repopularSelect(el.mSegmento, new Set(registros.map((r) => r.Segmento).filter(Boolean)));
   repopularSelect(el.mRegime, new Set(registros.map((r) => r.Tributacao).filter(Boolean)));
+  repopularSelect(el.mPrioridade, new Set(registros.map((r) => r.Prioridade).filter(Boolean)));
+  repopularSelect(el.mDocSituacao, new Set(registros.map((r) => r.DocumentosSituacao).filter(Boolean)));
   repopularSelect(el.mStatus, new Set(registros.map((r) => r.Status).filter(Boolean)), rotuloStatus);
   repopularSelect(el.mDocumentacao, new Set(registros.map((r) => r.Documentacao).filter(Boolean)));
   repopularSelect(el.mGerente, new Set(registros.map((r) => r.Gerente).filter(Boolean)));
   el.mBusca.value = "";
   el.mSegmento.value = "";
   el.mRegime.value = "";
+  el.mPrioridade.value = "";
+  el.mDocSituacao.value = "";
   el.mStatus.value = "";
   el.mDocumentacao.value = "";
   el.mGerente.value = "";
@@ -702,6 +729,7 @@ function abrirModal(registros, titulo, contexto) {
 function renderizarModalTabela() {
   const camposModal = {
     busca: el.mBusca, segmento: el.mSegmento, regime: el.mRegime,
+    prioridade: el.mPrioridade, docSituacao: el.mDocSituacao,
     status: el.mStatus, documentacao: el.mDocumentacao, gerente: el.mGerente,
   };
   const filtrados_ = filtrarConjunto(modalRegistros, camposModal);
@@ -714,7 +742,7 @@ function renderizarModalTabela() {
 
   el.modalCorpo.innerHTML = filtrados_.length
     ? filtrados_.map(linhaTabelaHTML).join("")
-    : `<tr><td colspan="9" class="modal-vazio">Nenhum registro.</td></tr>`;
+    : `<tr><td colspan="11" class="modal-vazio">Nenhum registro.</td></tr>`;
 }
 
 function fecharModal() {
@@ -944,6 +972,8 @@ function limparFiltrosGerais() {
   el.busca.value = "";
   el.segmento.value = "";
   el.regime.value = "";
+  el.prioridade.value = "";
+  el.docSituacao.value = "";
   el.status_.value = "";
   el.documentacao.value = "";
   el.gerente.value = "";
@@ -953,6 +983,8 @@ function limparFiltrosTabela() {
   el.tBusca.value = "";
   el.tSegmento.value = "";
   el.tRegime.value = "";
+  el.tPrioridade.value = "";
+  el.tDocSituacao.value = "";
   el.tStatus.value = "";
   el.tDocumentacao.value = "";
   el.tGerente.value = "";
@@ -971,11 +1003,15 @@ function atualizarCorpoDashboard() {
 
   repopularSelect(el.segmento, new Set(dadosEscopo.map((r) => r.Segmento).filter(Boolean)));
   repopularSelect(el.regime, new Set(dadosEscopo.map((r) => r.Tributacao).filter(Boolean)));
+  repopularSelect(el.prioridade, new Set(dadosEscopo.map((r) => r.Prioridade).filter(Boolean)));
+  repopularSelect(el.docSituacao, new Set(dadosEscopo.map((r) => r.DocumentosSituacao).filter(Boolean)));
   repopularSelect(el.gerente, new Set(dadosEscopo.map((r) => r.Gerente).filter(Boolean)));
   repopularSelect(el.status_, new Set(dadosEscopo.map((r) => r.Status).filter(Boolean)), rotuloStatus);
   repopularSelect(el.documentacao, new Set(dadosEscopo.map((r) => r.Documentacao).filter(Boolean)));
   repopularSelect(el.tSegmento, new Set(dadosEscopo.map((r) => r.Segmento).filter(Boolean)));
   repopularSelect(el.tRegime, new Set(dadosEscopo.map((r) => r.Tributacao).filter(Boolean)));
+  repopularSelect(el.tPrioridade, new Set(dadosEscopo.map((r) => r.Prioridade).filter(Boolean)));
+  repopularSelect(el.tDocSituacao, new Set(dadosEscopo.map((r) => r.DocumentosSituacao).filter(Boolean)));
   repopularSelect(el.tGerente, new Set(dadosEscopo.map((r) => r.Gerente).filter(Boolean)));
   repopularSelect(el.tStatus, new Set(dadosEscopo.map((r) => r.Status).filter(Boolean)), rotuloStatus);
   repopularSelect(el.tDocumentacao, new Set(dadosEscopo.map((r) => r.Documentacao).filter(Boolean)));
@@ -1059,7 +1095,7 @@ function carregarDados() {
     });
 }
 
-[el.busca, el.segmento, el.regime, el.status_, el.documentacao, el.gerente].forEach((campo) => {
+[el.busca, el.segmento, el.regime, el.prioridade, el.docSituacao, el.status_, el.documentacao, el.gerente].forEach((campo) => {
   campo.addEventListener("input", aplicarFiltros);
   campo.addEventListener("change", aplicarFiltros);
 });
@@ -1069,7 +1105,7 @@ el.limpar.addEventListener("click", () => {
   aplicarFiltros();
 });
 
-[el.tBusca, el.tSegmento, el.tRegime, el.tStatus, el.tDocumentacao, el.tGerente].forEach((campo) => {
+[el.tBusca, el.tSegmento, el.tRegime, el.tPrioridade, el.tDocSituacao, el.tStatus, el.tDocumentacao, el.tGerente].forEach((campo) => {
   campo.addEventListener("input", aplicarFiltroTabela);
   campo.addEventListener("change", aplicarFiltroTabela);
 });
@@ -1101,7 +1137,7 @@ el.modal.addEventListener("click", (evento) => {
 document.addEventListener("keydown", (evento) => {
   if (evento.key === "Escape" && !el.modal.classList.contains("oculto")) fecharModal();
 });
-[el.mBusca, el.mSegmento, el.mRegime, el.mStatus, el.mDocumentacao, el.mGerente].forEach((campo) => {
+[el.mBusca, el.mSegmento, el.mRegime, el.mPrioridade, el.mDocSituacao, el.mStatus, el.mDocumentacao, el.mGerente].forEach((campo) => {
   campo.addEventListener("input", renderizarModalTabela);
   campo.addEventListener("change", renderizarModalTabela);
 });

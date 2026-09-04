@@ -777,7 +777,7 @@ thead th {
   background: var(--mg-vermelho);
   color: #fff;
   text-align: left;
-  padding: 10px 12px;
+  padding: 10px 7px;
   font-weight: 600;
   font-size: 0.8rem;
   line-height: 1.25;
@@ -792,7 +792,7 @@ thead th {
 }
 
 tbody td {
-  padding: 9px 12px;
+  padding: 9px 7px;
   border-bottom: 1px solid var(--borda);
   white-space: normal;
   overflow-wrap: break-word;
@@ -1001,7 +1001,7 @@ body.modal-aberto { overflow: hidden; }
   top: 0;
   background: var(--bg-card-alt);
   text-align: left;
-  padding: 9px 12px;
+  padding: 9px 7px;
   font-size: 0.68rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -1013,7 +1013,7 @@ body.modal-aberto { overflow: hidden; }
 }
 
 .modal-tabela td {
-  padding: 8px 12px;
+  padding: 8px 7px;
   border-bottom: 1px solid var(--borda);
   color: var(--cinza-escuro);
   vertical-align: top;
