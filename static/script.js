@@ -1,11 +1,13 @@
 // Portal único que junta o Radar Fiscal e a Análise de Balanço (mesma ideia
 // da Análise de Entrega de SPED com ICMS/Contribuições): os dois relatórios
-// têm robôs e planilhas totalmente diferentes, então cada fonte é
-// normalizada pra um esquema comum (ver normalizarRadarFiscal/
-// normalizarAnaliseBalanco) antes de entrar em `dados`. A partir daí, a
-// página inteira (filtros, cards, ranking, evolução, tabela) sempre mostra
-// só um Tipo de Relatório por vez, escolhido na aba do topo — igual ao
-// padrão do SPED.
+// têm robôs e planilhas totalmente diferentes, mas o backend
+// (backend/orquestrador.py) já entrega tudo numa PLANILHA ÚNICA
+// (data/relatorio_fechamentos/resumo.xlsx) no schema normalizado, com as
+// duas fontes empilhadas (coluna TipoRelatorio) e as correções de
+// Documentação já aplicadas. O front só faz fetch + parse (SheetJS) e lê —
+// não normaliza mais nada. A partir daí, a página inteira (filtros, cards,
+// ranking, evolução, tabela) sempre mostra só um Tipo de Relatório por vez,
+// escolhido na aba do topo — igual ao padrão do SPED.
 //
 // Navegação (Unidade -> Departamento/Segmento) segue o mesmo padrão de
 // telas do Portal de Tarefas: escolher o card da Unidade abre a tela da
@@ -80,74 +82,41 @@ const el = {
 // Os placares do topo e as abas Pendente/Concluído da tabela seguem a
 // coluna "Documentação" — o usuário quer que a aba SEMPRE bata com o que a
 // coluna mostra (2026-09-03: "quando for pendente, esteja na aba pendente;
-// quando for concluído/recebido, na aba concluída"). Pra Análise de Balanço
-// a Documentação vem da tarefa de retorno do checklist em aberto
-// (_juntar_checklist_ctb no backend); pro Radar Fiscal, de
-// corrigirDocumentacao(). Antes (2026-09-02) isso media o Status "Fechado";
-// mudou porque a coluna Documentação passou a ser um sinal confiável.
+// quando for concluído/recebido, na aba concluída"). A coluna Documentacao
+// já vem resolvida do backend: Análise de Balanço pela tarefa de retorno do
+// checklist em aberto (_juntar_checklist_ctb), Radar Fiscal pela regra de
+// Status (_corrigir_documentacao_inconsistente). Antes (2026-09-02) isso
+// media o Status "Fechado"; mudou porque a Documentacao virou sinal confiável.
 function documentacaoRecebida(r) {
   return r.Documentacao === "Documentação Recebida";
 }
 
-// ── Normalização por fonte ──────────────────────────────────────────────
-// Radar Fiscal e Análise de Balanço são robôs/planilhas independentes com
-// nomes de coluna diferentes pra conceitos equivalentes (Nome/Cliente,
-// GerenteContas/Gerente, RegimeApuracao/Tributacao, DataConfirmacao/
-// DataImportacao...). Normalizar aqui, uma vez, no carregamento, permite
-// que todo o resto do arquivo (filtros, cards, ranking, evolução, tabela)
-// trabalhe só com os nomes comuns, sem `if (tipo === ...)` espalhado pelo
-// código. `Segmento` e `Documentação` já têm o mesmo nome/valores nas duas
-// fontes — não precisam de mapeamento.
+// ── Leitura da planilha única ──────────────────────────────────────────
+// O resumo.xlsx já vem no schema normalizado (backend/orquestrador.py:
+// _normalizar_radar_fiscal / _normalizar_analise_balanco em pandas), com as
+// duas fontes empilhadas e TODAS as regras de negócio já aplicadas:
+//  - correção "Documentação Pendente só coexiste com Status Não importado"
+//    (só Radar Fiscal) → _corrigir_documentacao_inconsistente;
+//  - "Documentação Recebida nunca carrega Documento Pendente" → idem;
+//  - Documentação da Análise de Balanço = tarefa de retorno do checklist em
+//    aberto → _juntar_checklist_ctb.
+// Aqui o front só lê. Colunas da planilha: TipoRelatorio, Id, Cliente,
+// Grupo, Unidade, Segmento, Gerente, Tributacao, Status, Documentacao,
+// Departamento, DataReferencia (texto ISO), DocumentoPendente.
 
-// Pedido do usuário (2026-08-25): "todas as empresas [com documentação
-// pendente] precisam estar com status Não importado". Ele só citou o caso
-// "Fechado" como exemplo, mas nos dados reais qualquer Status diferente do
-// "não importado" da fonte às vezes aparece com documentação pendente
-// (Fechado é o mais comum, mas Simulando/Com o GC também acontecem) — pra
-// cumprir a regra geral, tratamos qualquer uma dessas combinações como
-// inconsistência de dados e normalizamos para "Documentação Recebida".
-// Mesma regra replicada em
-// backend/orquestrador.py::_corrigir_documentacao_inconsistente pro Excel.
-function corrigirDocumentacao(status, documentacao, statusNaoImportado) {
-  if (documentacao === "Documentação Pendente" && status !== statusNaoImportado) return "Documentação Recebida";
-  return documentacao;
-}
-
-// Texto livre com a pendência de documento de cada empresa. As duas fontes
-// preenchem de lugares diferentes, mesmo destino (coluna "Documento
-// Pendente" da tabela / modal):
-//  - Radar Fiscal: coluna "PENDENCIAS FECHAMENTO" da Planilha de Mercados
-//    (só SP/GOIAS passam por ela; backend só preenche quando "ÍA" == "A" —
-//    ver máscara em radar_fiscal.py::_processar_resumo).
-//  - Análise de Balanço: motivos do Retorno do Checklist Contábil
-//    concatenados por cliente (um Tipo de documento por linha) — ver
-//    backend/checklist_ctb.py, junção por IdCliente em orquestrador.py.
+// Texto livre com a pendência de documento de cada empresa (coluna
+// "Documento Pendente" da tabela / modal). Radar Fiscal: coluna "PENDENCIAS
+// FECHAMENTO" da Planilha de Mercados; Análise de Balanço: motivos do
+// Retorno do Checklist Contábil concatenados por cliente. O backend já
+// resolve de onde vem e quando zera — aqui só limpamos espaço nas pontas.
 function formatarDocumentoPendente(texto) {
-  const limpo = (texto || "").trim();
+  const limpo = (texto == null ? "" : String(texto)).trim();
   return limpo || null;
 }
 
-function normalizarRadarFiscal(r) {
+function normalizarLinha(r) {
   return {
-    Id: r.IdCorporativo,
-    Cliente: r.Nome,
-    Grupo: r.Grupo,
-    Unidade: r.Unidade,
-    Segmento: r.Segmento,
-    Gerente: r.GerenteContas,
-    Tributacao: r.RegimeApuracao,
-    Status: r.Status,
-    Documentacao: corrigirDocumentacao(r.Status, r["Documentação"], "Não importado"),
-    Departamento: r.DeptoFiscal,
-    DataReferencia: r.DataConfirmacao,
-    DocumentoPendente: formatarDocumentoPendente(r.DocumentoPendente),
-    TipoRelatorio: "Radar Fiscal",
-  };
-}
-
-function normalizarAnaliseBalanco(r) {
-  return {
-    Id: r.IdCliente,
+    Id: r.Id,
     Cliente: r.Cliente,
     Grupo: r.Grupo,
     Unidade: r.Unidade,
@@ -155,22 +124,14 @@ function normalizarAnaliseBalanco(r) {
     Gerente: r.Gerente,
     Tributacao: r.Tributacao,
     Status: r.Status,
-    // A Análise de Balanço NÃO passa por corrigirDocumentacao(): desde
-    // 2026-09-03 a `Documentação` da AB é decidida no backend
-    // (_juntar_checklist_ctb) pela tarefa de retorno do checklist em aberto —
-    // "Pendente" = tem tarefa em aberto, independente do Status. Rodar a
-    // regra de Status por cima re-quebrava os clientes em aberto com Status
-    // "Fechado"/"Com o GC" (mostrava "Recebida" mesmo com documento pendente).
-    Documentacao: r["Documentação"],
-    Departamento: undefined,
-    DataReferencia: r.DataImportacao,
-    // Motivos do Checklist Contábil concatenados por cliente (ver
-    // backend/checklist_ctb.py). O backend (_juntar_checklist_ctb em
-    // orquestrador.py) já limita esse texto aos clientes com tarefa de
-    // retorno do checklist EM ABERTO (regra do usuário, 2026-09-02) — aqui
-    // só exibimos o que vier no JSON.
+    Documentacao: r.Documentacao,
+    // Só existe no Radar Fiscal (2ª dimensão de navegação). Célula vazia da
+    // Análise de Balanço vem null do SheetJS — vira undefined pra bater com
+    // o que o resto do código já esperava.
+    Departamento: r.Departamento || undefined,
+    DataReferencia: r.DataReferencia,
     DocumentoPendente: formatarDocumentoPendente(r.DocumentoPendente),
-    TipoRelatorio: "Análise de Balanço",
+    TipoRelatorio: r.TipoRelatorio,
   };
 }
 
@@ -378,7 +339,7 @@ function renderizarDocGrupo(docNome, d, totalCategoria) {
   const classe = docNome === "Documentação Recebida" ? "recebida" : "pendente";
   const pctDoc = totalCategoria ? (d.total / totalCategoria) * 100 : 0;
   const chaveNaoImportado = statusOrdem()[statusOrdem().length - 1];
-  // Documentação Pendente: no Radar Fiscal, depois de corrigirDocumentacao()
+  // Documentação Pendente: no Radar Fiscal, depois da correção do backend
   // (Fechado + Pendente vira Recebida), só sobra "Não importado" — as outras
   // linhas seriam sempre zero. Na Análise de Balanço (desde 2026-09-03) a
   // pendência vem da tarefa de retorno do checklist em aberto e pode
@@ -1073,25 +1034,29 @@ function selecionarTipoRelatorio(tipo) {
   atualizarNavegacao();
 }
 
+// Uma planilha só: mesmo que os robôs tragam N arquivos/abas, o backend
+// entrega data/relatorio_fechamentos/resumo.xlsx com tudo empilhado. Parse
+// no navegador (SheetJS), igual aos outros portais MG.
 function carregarDados() {
-  Promise.all([
-    fetch("data/relatorio_fechamentos/radar_fiscal_dados.json?" + Date.now())
-      .then((r) => r.json())
-      .then((json) => json.map(normalizarRadarFiscal))
-      .catch(() => []),
-    fetch("data/relatorio_fechamentos/analise_balanco_dados.json?" + Date.now())
-      .then((r) => r.json())
-      .then((json) => json.map(normalizarAnaliseBalanco))
-      .catch(() => []),
-  ]).then(([radarFiscal, analiseBalanco]) => {
-    dados = [...radarFiscal, ...analiseBalanco].filter((r) => !UNIDADES_EXCLUIDAS.includes(r.Unidade));
-    if (!dados.length) {
-      el.unidadesGrid.innerHTML = `<p class="evolucao-vazio">Nenhum dado exportado ainda — rode os robôs do Radar Fiscal e da Análise de Balanço.</p>`;
-      return;
-    }
-    const tipos = renderizarTipoRelatorioAbas([...new Set(dados.map((r) => r.TipoRelatorio).filter(Boolean))]);
-    selecionarTipoRelatorio(tipos[0] || null);
-  });
+  fetch("data/relatorio_fechamentos/resumo.xlsx?" + Date.now())
+    .then((r) => {
+      if (!r.ok) throw new Error("resumo.xlsx não encontrado");
+      return r.arrayBuffer();
+    })
+    .then((buffer) => {
+      const wb = XLSX.read(buffer, { type: "array" });
+      const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null });
+      dados = linhas.map(normalizarLinha).filter((r) => !UNIDADES_EXCLUIDAS.includes(r.Unidade));
+      if (!dados.length) {
+        el.unidadesGrid.innerHTML = `<p class="evolucao-vazio">Nenhum dado exportado ainda — rode o robô (backend/orquestrador.py).</p>`;
+        return;
+      }
+      const tipos = renderizarTipoRelatorioAbas([...new Set(dados.map((r) => r.TipoRelatorio).filter(Boolean))]);
+      selecionarTipoRelatorio(tipos[0] || null);
+    })
+    .catch(() => {
+      el.unidadesGrid.innerHTML = `<p class="evolucao-vazio">Nenhum dado exportado ainda — rode o robô (backend/orquestrador.py).</p>`;
+    });
 }
 
 [el.busca, el.segmento, el.regime, el.status_, el.documentacao, el.gerente].forEach((campo) => {

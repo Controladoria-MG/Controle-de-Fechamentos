@@ -13,7 +13,21 @@ Breadcrumb (`#navegacao-breadcrumb`) navega de volta a qualquer nível. Trocar d
 
 **Projeto autocontido (migrado em 2026-08-21)**: os robôs de automação (Radar Fiscal via MGApps; Radar de Fechamento + Retorno do Checklist + resumo via MGApps/Intranet) moram dentro deste projeto, em `backend/`. Antes viviam em dois repositórios separados (`Radar-Fiscal/` e `Analise-de-Balanco/`) e eram carregados por caminho — a pedido explícito do usuário ("eles não vão existir mais, somente o Relatório de Fechamentos"), o código foi migrado pra cá e os dois repositórios antigos foram **arquivados no GitHub** (somente leitura, código preservado, não apagados — reversível se precisar).
 
-`python backend/orquestrador.py` roda os dois robôs em sequência, copia/gera os JSONs que o portal lê, e ainda junta os dois resumos num **Excel único** (`data/relatorio_fechamentos/resumo.xlsx`, schema normalizado, pedido explícito do usuário — "quero os dados em excel mesmo").
+`python backend/orquestrador.py` roda os dois robôs em sequência e junta as duas fontes numa **planilha única** (`data/relatorio_fechamentos/resumo.xlsx`, schema normalizado), que é o que o portal lê.
+
+## Planilha única — o portal lê SÓ o resumo.xlsx (2026-09)
+
+Pedido do usuário: "mesmo que a extração traga 30 planilhas distintas, o final precisa ser 1 planilha só" — mesmo padrão do Portal de Chamados / Tarefas / Tarefas Baixadas.
+
+Antes o portal lia **dois** JSONs no schema bruto de cada fonte (`radar_fiscal_dados.json` + `analise_balanco_dados.json`) e `static/script.js` normalizava os dois no navegador. Agora:
+
+- O backend gera **`data/relatorio_fechamentos/resumo.xlsx`** já no schema normalizado, com as duas fontes empilhadas (coluna `TipoRelatorio` = "Radar Fiscal" / "Análise de Balanço") e **todas** as regras de negócio já aplicadas (correção de Documentação, zeragem de Documento Pendente, Documentação da AB pela tarefa em aberto). `_escrever_resumo_portal()` em `orquestrador.py` faz duas adaptações pro front: `DataReferencia` vira texto ISO `AAAA-MM-DD` (o JS faz `.slice(0, 10)`); a coluna `Documentação` perde o acento → `Documentacao`.
+- `static/script.js`: `carregarDados()` faz **um** `fetch` do `resumo.xlsx`, parseia com SheetJS (`XLSX.read` / `sheet_to_json`) e passa cada linha por `normalizarLinha()` (só limpeza leve — o backend já normalizou). **`normalizarRadarFiscal` / `normalizarAnaliseBalanco` / `corrigirDocumentacao` foram REMOVIDAS do front.** `index.html` carrega o SheetJS do cdnjs.
+- Os dois JSONs de dados **não são mais publicados** (o `.gitignore` do repo libera `!data/relatorio_fechamentos/resumo.xlsx`; os JSONs foram `git rm`). Continuam sendo gerados nas pastas de trabalho gitignoradas (`data/radar_fiscal/`, `data/analise_balanco/`) só pra debug.
+- Ainda publicados: `status_radar_fiscal.json`, `status_analise_balanco.json` e o `status.json` combinado — só o carimbo de "atualizado em" por fonte (`carregarStatus()`).
+- Hub: `ARQUIVOS_PORTAL` em `backend/relatorios/relatorio_fechamentos.py` agora copia `resumo.xlsx` + os 3 `status*.json` pro clone.
+
+O `resumo.xlsx` deixou de ser "artefato local não versionado" — virou **o** dado do portal.
 
 ## Estrutura de Diretórios
 
@@ -32,12 +46,10 @@ Raiz/
 │   ├── radar_fiscal/            (arquivos brutos do robô Radar Fiscal — .xlsx gitignorados, JSON/status versionados)
 │   ├── analise_balanco/         (arquivos brutos do pipeline Análise de Balanço — idem)
 │   └── relatorio_fechamentos/
-│       ├── radar_fiscal_dados.json       (cópia de data/radar_fiscal/, schema bruto — portal normaliza no frontend)
-│       ├── status_radar_fiscal.json      (idem, renomeado)
-│       ├── analise_balanco_dados.json    (cópia de data/analise_balanco/)
-│       ├── status_analise_balanco.json   (idem, renomeado)
-│       ├── status.json                   (execução combinada — total das duas fontes)
-│       └── resumo.xlsx                   (as duas fontes juntas, schema normalizado — gerado só pelo orquestrador, não versionado)
+│       ├── resumo.xlsx                   (** a planilha única que o portal lê ** — 2 fontes empilhadas, schema normalizado, versionada)
+│       ├── status_radar_fiscal.json      (carimbo de "atualizado em" do Radar Fiscal)
+│       ├── status_analise_balanco.json   (carimbo da Análise de Balanço)
+│       └── status.json                   (execução combinada — total das duas fontes)
 └── backend/
     ├── radar_fiscal.py            (robô 1 — MGApps "Sistema de Analise", pywinauto)
     ├── radar_fechamento.py        (robô 2a — MGApps "Analise Balanço", pywinauto)
@@ -46,7 +58,7 @@ Raiz/
     ├── checklist_em_aberto.py     (robô 2d — Intranet, selenium — "(Meu)checklist contabil em aberto")
     ├── checklist_ctb.py           (consolida o relatório CTB: 1 linha por cliente, motivos concatenados)
     ├── resumo.py                  (junta radar_fechamento + retorno_checklist)
-    └── orquestrador.py            (roda tudo, gera o Excel único e os JSONs do portal)
+    └── orquestrador.py            (roda tudo e gera a planilha única resumo.xlsx do portal)
 ```
 
 ---
@@ -57,10 +69,10 @@ Raiz/
 Mesmas regras dos outros portais MG: único `.html` é `index.html` na raiz; `.css`/`.js` só em `static/`; nada de lógica de backend em `static/`.
 
 ### Dados (`data/`)
-- **Nunca editar os JSONs nem o Excel à mão.** Todos são gerados por `backend/orquestrador.py`.
+- **Nunca editar o `resumo.xlsx` nem os `status.json` à mão.** Todos são gerados por `backend/orquestrador.py`.
 - Pra atualizar com dados novos: `python backend/orquestrador.py`. Roda os dois robôs de verdade (MGApps + Intranet) — leva o tempo normal de cada um somado (~3-4 min na calibração), e precisa rodar numa máquina com MGApps instalado e o `.env` deste projeto preenchido (`USUARIO`/`SENHA` pro Radar Fiscal, `INTRANET_USUARIO`/`INTRANET_SENHA` pra Intranet).
-- Em `data/radar_fiscal/` e `data/analise_balanco/`: só os `.xlsx` brutos (e `data/analise_balanco/_temp/`) são ignorados — os JSONs/`status.json` de cada um são versionados (são a entrada dos passos seguintes do orquestrador).
-- Em `data/relatorio_fechamentos/`: os 4 JSONs (`radar_fiscal_dados.json`, `status_radar_fiscal.json`, `analise_balanco_dados.json`, `status_analise_balanco.json`) + `status.json` combinado são **versionados** (permite GitHub Pages mostrar dados atualizados a cada push). **`resumo.xlsx` não é versionado** — artefato grande e binário, regenerado a cada execução; quem quiser os dados em Excel roda o orquestrador e abre o arquivo local.
+- Em `data/radar_fiscal/` e `data/analise_balanco/`: pastas de trabalho dos robôs, **inteiras gitignoradas** (`.xlsx` brutos + os JSONs intermediários de cada fonte). Só servem de entrada pros passos seguintes do orquestrador e pra debug local.
+- Em `data/relatorio_fechamentos/`: **`resumo.xlsx`** (a planilha única do portal, liberada por `!data/relatorio_fechamentos/resumo.xlsx` no `.gitignore`) + `status_radar_fiscal.json` + `status_analise_balanco.json` + `status.json` combinado são **versionados** — é o que o GitHub Pages serve ao portal a cada push.
 
 ### `.env`
 Um único arquivo pras duas fontes (antes eram dois `.env` separados, um por projeto):
@@ -94,8 +106,10 @@ Também corrigido nessa calibração: `_exportar_excel()` em `radar_fiscal.py` �
 
 **Validado ao vivo com sucesso em 2026-08-21** (antes da migração pra dentro deste projeto, com os robôs ainda nos projetos-fonte): pipeline completo, ~3min30s, 4190 registros (2076 Radar Fiscal + 2114 Análise de Balanço), Excel gerado, publicado no GitHub. Depois da migração, uma nova tentativa esbarrou no clique único que abre "Sistema de Analise" (exige a janela do MGApps em primeiro plano de verdade) — não reproduziu nenhum dos bugs de estado corrigidos acima (o `try/finally` fechou tudo certo mesmo com erro), e o sintoma bate com uso concorrente da máquina durante o teste (foreground window era outro app, não o MGApps), não com a migração em si.
 
-### Normalização das duas fontes (`static/script.js` e `backend/orquestrador.py`)
-Radar Fiscal e Análise de Balanço têm nomes de coluna diferentes pra conceitos equivalentes. No frontend, `normalizarRadarFiscal()`/`normalizarAnaliseBalanco()` traduzem cada fonte pro mesmo esquema comum **uma vez**, no carregamento (`carregarDados()`), pra todo o resto do arquivo (filtros, cards, ranking, evolução, tabela) trabalhar só com os nomes normalizados. No backend, `_normalizar_radar_fiscal()`/`_normalizar_analise_balanco()` em `orquestrador.py` fazem o mesmo mapeamento em pandas, só pra gerar o Excel único (os JSONs do portal continuam no schema bruto de cada fonte — o frontend é quem normaliza):
+### Normalização das duas fontes (`backend/orquestrador.py`)
+> **Atualização 2026-09 (planilha única):** a normalização agora acontece **só no backend**. `normalizarRadarFiscal()`/`normalizarAnaliseBalanco()`/`corrigirDocumentacao()` foram **removidas** do `static/script.js` — o front lê o `resumo.xlsx` já normalizado. As menções ao "frontend normaliza" / "`_gerar_json_portal`" / "JSONs no schema bruto" nas seções abaixo são históricas. Ver a seção **"Planilha única"** no topo.
+
+Radar Fiscal e Análise de Balanço têm nomes de coluna diferentes pra conceitos equivalentes. `_normalizar_radar_fiscal()`/`_normalizar_analise_balanco()` em `orquestrador.py` traduzem cada fonte pro mesmo esquema comum em pandas, e o resultado (após `_corrigir_documentacao_inconsistente`) é gravado no `resumo.xlsx`:
 
 | Campo comum | Radar Fiscal | Análise de Balanço |
 |---|---|---|
@@ -116,6 +130,8 @@ Radar Fiscal e Análise de Balanço têm nomes de coluna diferentes pra conceito
 É a última coluna da tabela / do modal. As duas fontes preenchem de lugares diferentes; mesmo destino (`DocumentoPendente` no schema normalizado).
 
 **Radar Fiscal**: coluna `"PENDENCIAS FECHAMENTO"` da Planilha de Mercados (só SP/GOIAS passam por ela, `UNIDADES_MERCADOS`). Máscara `"ÍA" == "A"` em `radar_fiscal.py::_processar_resumo` — só as linhas com ÍA=="A" ficam com texto (pedido do usuário 2026-08-25, **re-confirmado 2026-09-02** — ele chegou a cogitar trocar pra `DOC. PENDENTE CHECKLIST` e voltou atrás; a planilha tem as duas colunas). Rename pra `DocumentoPendente` em `_gerar_json_portal`.
+
+**"Documentação Recebida" nunca mostra Documento Pendente (2026-09-03)**: mesmo que a linha venha com texto (ÍA=="A"), se a `Documentação` resultante é "Documentação Recebida" — inclusive quando `corrigirDocumentacao()` rebaixa um "Fechado"+Pendente pra Recebida — o `DocumentoPendente` é zerado e a coluna mostra "—". Frontend: `normalizarRadarFiscal` (calcula `Documentacao` antes e usa `null` se Recebida). Backend: `_corrigir_documentacao_inconsistente` zera `DocumentoPendente` de qualquer linha `Documentação == "Documentação Recebida"` (afeta o `resumo.xlsx`). Na calibração de 2026-09-03 pegava 1 linha (EMPLACA SERVIÇOS, Status Fechado).
 
 **Análise de Balanço**: combinação de DOIS relatórios da Intranet, além do `retorno_checklist.py` que já existia.
 - `backend/checklist_ctb_extrator.py` — baixa "Checklist Contábil > Relatórios > Recebimento" (uma linha por documento pendente de cada cliente) pra `data/analise_balanco/checklist_ctb.xlsx`. Adaptado do `CTB.py` que o usuário largou na raiz (fixes: `--headless=new`, `.env`, competência como parâmetro, download pra `data/`). Conta: `CHECKLIST_CTB_USUARIO/SENHA`, cai pra `INTRANET_*`.
@@ -174,9 +190,9 @@ Aplicado em `_juntar_checklist_ctb()` (junto com o `DocumentoPendente`), então 
 1. `_recarregar_credenciais()` — relê `.env`, sobrescreve `radar_fiscal.USUARIO`/`SENHA` e `retorno_checklist.USUARIO`/`SENHA`.
 2. Checagem de janelas abertas (MG Apps + Análise de Balanço) de uma execução anterior.
 3. `radar_fiscal.executar(log)` → `df_radar`. Fecha MG Apps de novo.
-4. `radar_fechamento.executar(log)` → `arquivo_radar_fechamento`; `retorno_checklist.executar(log)` → `arquivo_checklist`; `resumo.gerar_resumo(...)` → `df_balanco`. Depois `checklist_ctb_extrator.executar(log)` baixa o Checklist Contábil (**try/except — não bloqueia o pipeline** se cair) e `_juntar_checklist_ctb()` faz o LEFT JOIN da coluna `DocumentoPendente` por `IdCliente`. Gera `analise_balanco_dados.json`/`status.json` em `data/analise_balanco/` (réplica do que o antigo `Analise-de-Balanco/backend/orquestrador.py` fazia — este projeto não tem mais aquele orquestrador intermediário).
-5. Copia os JSONs/status de `data/radar_fiscal/` e `data/analise_balanco/` pra `data/relatorio_fechamentos/`.
-6. Junta os dois (normalizados) num `resumo.xlsx` único.
+4. `radar_fechamento.executar(log)` → `arquivo_radar_fechamento`; `retorno_checklist.executar(log)` → `arquivo_checklist`; `resumo.gerar_resumo(...)` → `df_balanco`. Depois `checklist_ctb_extrator.executar(log)` baixa o Checklist Contábil (**try/except — não bloqueia o pipeline** se cair) e `_juntar_checklist_ctb()` faz o LEFT JOIN da coluna `DocumentoPendente` por `IdCliente` + resolve a `Documentação` da AB. Ainda gera `analise_balanco_dados.json`/`status.json` em `data/analise_balanco/` (gitignorado, só debug).
+5. Copia só os `status.json` de `data/radar_fiscal/` e `data/analise_balanco/` pra `data/relatorio_fechamentos/` (renomeados).
+6. `df = pd.concat([_normalizar_radar_fiscal(df_radar), _normalizar_analise_balanco(df_balanco)])` → `_corrigir_documentacao_inconsistente(df)` → **`_escrever_resumo_portal(df)`** grava `data/relatorio_fechamentos/resumo.xlsx` (`DataReferencia` como texto ISO, `Documentação`→`Documentacao`).
 7. Escreve `status.json` combinado.
 
 ### Placares e abas Pendente/Concluído seguem a coluna Documentação (2026-09-03)
@@ -210,13 +226,13 @@ Dois princípios do quebra-card clicável, o 2º ajustado depois de o usuário n
 ### Como rodar
 ```
 cd Relatorio-de-Fechamentos
-python backend/orquestrador.py   # roda os 2 robôs + gera Excel único + gera/copia JSONs do portal
+python backend/orquestrador.py   # roda os 2 robôs + gera a planilha única resumo.xlsx do portal
 python -m http.server 8794
 ```
 Acessar `http://localhost:8794`.
 
 ### Integração com o hub "Atualização de bases"
-Registrado como `relatorio_fechamentos` em `backend/relatorios/relatorio_fechamentos.py` do hub — wrapper fino que carrega `backend/orquestrador.py` deste projeto via `importlib.util.spec_from_file_location`, com `sys.path.insert(0, CAMINHO_ROBO.parent)` (necessário desde a migração, porque `orquestrador.py` agora faz imports de módulos irmãos — `import radar_fiscal`, `import radar_fechamento` etc. — que só resolvem com a pasta `backend/` deste projeto no `sys.path`). Depois de rodar, copia os JSONs pro clone em `data/relatorio_fechamentos/` do hub, que é o que `git_manager.publicar()` commita.
+Registrado como `relatorio_fechamentos` em `backend/relatorios/relatorio_fechamentos.py` do hub — wrapper fino que carrega `backend/orquestrador.py` deste projeto via `importlib.util.spec_from_file_location`, com `sys.path.insert(0, CAMINHO_ROBO.parent)` (necessário desde a migração, porque `orquestrador.py` agora faz imports de módulos irmãos — `import radar_fiscal`, `import radar_fechamento` etc. — que só resolvem com a pasta `backend/` deste projeto no `sys.path`). Depois de rodar, copia `resumo.xlsx` + os 3 `status*.json` (lista `ARQUIVOS_PORTAL`) pro clone em `data/relatorio_fechamentos/` do hub, que é o que `git_manager.publicar()` commita.
 
 ### Cores — regra fixa
 **Nunca verde/âmbar para status.** Só rampa de vermelho MG, igual a todos os outros dashboards MG.

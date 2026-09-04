@@ -10,6 +10,8 @@ __pycache__/
 backend/
 
 data/relatorio_fechamentos/*.xlsx
+# ...exceto a planilha única que o portal lê (fetch + SheetJS no navegador).
+!data/relatorio_fechamentos/resumo.xlsx
 # Pastas de trabalho intermediárias dos robôs — regeneradas a cada execução
 # (o orquestrador copia o que o portal precisa pra data/relatorio_fechamentos/,
 # que é a única versionada).
