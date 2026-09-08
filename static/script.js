@@ -75,6 +75,7 @@ const el = {
   modalTitulo: document.getElementById("modal-titulo"),
   modalSub: document.getElementById("modal-sub"),
   modalFechar: document.getElementById("modal-fechar"),
+  modalExportar: document.getElementById("modal-exportar"),
   modalCorpo: document.getElementById("modal-corpo"),
   mBusca: document.getElementById("m-busca"),
   mSegmento: document.getElementById("m-segmento"),
@@ -707,6 +708,7 @@ function renderizarTabela() {
 // `filtrarConjunto()`, agindo só sobre esse subconjunto.
 let modalRegistros = [];
 let modalContexto = "";
+let modalFiltrados = []; // último recorte renderizado — o que "Exportar Excel" baixa
 
 function abrirModal(registros, titulo, contexto) {
   modalRegistros = registros;
@@ -742,6 +744,7 @@ function renderizarModalTabela() {
     status: el.mStatus, documentacao: el.mDocumentacao, gerente: el.mGerente,
   };
   const filtrados_ = filtrarConjunto(modalRegistros, camposModal);
+  modalFiltrados = filtrados_;
 
   const temFiltro = Object.values(camposModal).some((c) => c.value.trim() !== "");
   const contagem = temFiltro
@@ -757,6 +760,39 @@ function renderizarModalTabela() {
 function fecharModal() {
   el.modal.classList.add("oculto");
   document.body.classList.remove("modal-aberto");
+}
+
+// Baixa em .xlsx exatamente o que está na tela do modal (já filtrado pelos
+// 6 filtros do modal, mesmas 11 colunas da tabela) — reusa o SheetJS que o
+// portal já carrega pra ler o resumo.xlsx.
+function exportarModalExcel() {
+  if (!modalFiltrados.length) return;
+
+  const linhas = modalFiltrados.map((r) => ({
+    Cliente: nomeComId(r.Id, r.Cliente),
+    Grupo: celula(r.Grupo),
+    Unidade: celula(r.Unidade ? r.Unidade.toUpperCase() : r.Unidade),
+    Segmento: celula(r.Segmento),
+    "Gerente de Contas": celula(r.Gerente),
+    "Tributação": regimeCurto(r.Tributacao),
+    Prioridade: celula(r.Prioridade),
+    "Doc. Situação": celula(r.DocumentosSituacao),
+    Status: celula(rotuloStatus(r.Status)),
+    "Documentação": celula(r.Documentacao),
+    "Doc. Pendente": celula(r.DocumentoPendente),
+  }));
+
+  const planilha = XLSX.utils.json_to_sheet(linhas);
+  const livro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(livro, planilha, "Registros");
+
+  const REGEX_DIACRITICOS = new RegExp("[\\u0300-\\u036f]", "g");
+  const nomeBase = (el.modalTitulo.textContent || "registros")
+    .normalize("NFD")
+    .replace(REGEX_DIACRITICOS, "") // tira acento
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  XLSX.writeFile(livro, `${nomeBase || "registros"}.xlsx`);
 }
 
 // Cada fonte tem seu próprio status.json (última execução do robô
@@ -1153,6 +1189,7 @@ el.tabelaAbas.querySelectorAll(".tabela-aba").forEach((botao) => {
 // Modal: fecha no X, no clique fora da caixa e no Esc. Os 6 filtros dele
 // re-renderizam só a tabela do modal.
 el.modalFechar.addEventListener("click", fecharModal);
+el.modalExportar.addEventListener("click", exportarModalExcel);
 el.modal.addEventListener("click", (evento) => {
   if (evento.target === el.modal) fecharModal();
 });
