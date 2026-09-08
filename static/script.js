@@ -363,15 +363,23 @@ function renderizarDocGrupo(docNome, d, totalCategoria) {
   const chaveNaoImportado = statusOrdem()[statusOrdem().length - 1];
   // Documentação Pendente: no Radar Fiscal, depois da correção do backend
   // (Fechado + Pendente vira Recebida), só sobra "Não importado" — as outras
-  // linhas seriam sempre zero. Na Análise de Balanço (desde 2026-09-03) a
-  // pendência vem da tarefa de retorno do checklist em aberto e pode
-  // coexistir com qualquer Status, então mostramos a linha "não importado"
-  // mais qualquer outro Status que realmente tenha registro.
+  // linhas seriam sempre zero, então ela é sempre mostrada (mesmo em 0) como
+  // referência. Na Análise de Balanço (desde 2026-09-03) a pendência vem da
+  // tarefa de retorno do checklist em aberto e pode coexistir com qualquer
+  // Status, então mostramos a linha "não importado" mais qualquer outro
+  // Status que realmente tenha registro.
+  //
+  // Documentação Recebida: "não importado" NÃO pode ser excluída de vez
+  // (bug corrigido 2026-09-08) — na Análise de Balanço a Documentação é
+  // decidida pela tarefa de checklist, não pelo Status, então a maioria das
+  // linhas "Recebida" tem Status "Não Importado" (~94% na calibração real).
+  // Excluir essa linha incondicionalmente fazia a soma das linhas de Status
+  // não bater com o total mostrado no cabeçalho do card.
   const statusOrdenado = classe === "pendente"
     ? statusOrdem()
         .filter((s) => s === chaveNaoImportado || (d.status.get(s) || 0) > 0)
         .map((s) => [s, d.status.get(s) || 0])
-    : statusOrdem().filter((s) => s !== chaveNaoImportado).map((s) => [s, d.status.get(s) || 0]);
+    : statusOrdem().filter((s) => (d.status.get(s) || 0) > 0).map((s) => [s, d.status.get(s) || 0]);
 
   const linhasStatus = statusOrdenado
     .map(([status, count]) => {
