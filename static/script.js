@@ -56,6 +56,7 @@ const el = {
   quebraConteudo: document.getElementById("quebra-conteudo"),
   rankingGerentes: document.getElementById("ranking-gerentes"),
   evolucaoGrafico: document.getElementById("evolucao-grafico"),
+  evolucaoSubtitulo: document.getElementById("evolucao-subtitulo"),
   // Filtro independente, só da tabela — não afeta cards/ranking/evolução.
   tBusca: document.getElementById("t-busca"),
   tSegmento: document.getElementById("t-segmento"),
@@ -802,12 +803,25 @@ function contarConfirmacoesPorDia() {
     .sort((a, b) => a.data.localeCompare(b.data));
 }
 
+// DataReferencia vem de coluna diferente por fonte (Radar Fiscal =
+// DataConfirmacao, Análise de Balanço = DataImportacao — ver
+// _normalizar_radar_fiscal/_normalizar_analise_balanco em orquestrador.py),
+// então o subtítulo do gráfico precisa dizer a coisa certa em cada aba.
+const SUBTITULO_EVOLUCAO_POR_TIPO = {
+  "Radar Fiscal": "Empresas confirmadas por dia",
+  "Análise de Balanço": "Empresas importadas por dia",
+};
+
 // Uma barra por dia (SVG desenhado à mão, sem lib externa — mesmo padrão do
 // resto do portal) com o total de empresas fechadas naquele dia. Barra (não
 // linha) porque é uma contagem discreta por dia, não um total acumulado.
 function renderizarEvolucao() {
   const container = el.evolucaoGrafico;
   if (!container) return;
+
+  if (el.evolucaoSubtitulo) {
+    el.evolucaoSubtitulo.textContent = SUBTITULO_EVOLUCAO_POR_TIPO[tipoRelatorioAtivo] || "";
+  }
 
   const historico = contarConfirmacoesPorDia();
   if (historico.length < 2) {
