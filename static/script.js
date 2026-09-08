@@ -783,6 +783,17 @@ function exportarModalExcel() {
   }));
 
   const planilha = XLSX.utils.json_to_sheet(linhas);
+  // "Formato de tabela": faixa com filtro (setinha em cada coluna, igual
+  // Ctrl+Shift+L no Excel) + largura de coluna ajustada ao conteúdo. A
+  // versão community do SheetJS (a única gratuita, já carregada pro portal
+  // ler o resumo.xlsx) não escreve o "Formatar como Tabela" de verdade
+  // (aquele com faixas coloridas) — isso só existe na versão paga da lib.
+  planilha["!autofilter"] = { ref: planilha["!ref"] };
+  planilha["!cols"] = Object.keys(linhas[0] || {}).map((coluna) => ({
+    wch:
+      linhas.reduce((max, l) => Math.max(max, String(l[coluna] ?? "").length), coluna.length) + 2,
+  }));
+
   const livro = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(livro, planilha, "Registros");
 
