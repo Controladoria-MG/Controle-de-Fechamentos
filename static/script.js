@@ -763,9 +763,9 @@ function fecharModal() {
 }
 
 // Baixa em .xlsx exatamente o que está na tela do modal (já filtrado pelos
-// 6 filtros do modal, mesmas 11 colunas da tabela) — reusa o SheetJS que o
-// portal já carrega pra ler o resumo.xlsx.
-function exportarModalExcel() {
+// 6 filtros do modal, mesmas 11 colunas da tabela), como uma Tabela do
+// Excel de verdade (ver ExcelJS abaixo).
+async function exportarModalExcel() {
   if (!modalFiltrados.length) return;
 
   const linhas = modalFiltrados.map((r) => ({
@@ -782,20 +782,30 @@ function exportarModalExcel() {
     "Doc. Pendente": celula(r.DocumentoPendente),
   }));
 
-  const planilha = XLSX.utils.json_to_sheet(linhas);
-  // "Formato de tabela": faixa com filtro (setinha em cada coluna, igual
-  // Ctrl+Shift+L no Excel) + largura de coluna ajustada ao conteúdo. A
-  // versão community do SheetJS (a única gratuita, já carregada pro portal
-  // ler o resumo.xlsx) não escreve o "Formatar como Tabela" de verdade
-  // (aquele com faixas coloridas) — isso só existe na versão paga da lib.
-  planilha["!autofilter"] = { ref: planilha["!ref"] };
-  planilha["!cols"] = Object.keys(linhas[0] || {}).map((coluna) => ({
-    wch:
-      linhas.reduce((max, l) => Math.max(max, String(l[coluna] ?? "").length), coluna.length) + 2,
-  }));
+  const colunas = Object.keys(linhas[0] || {});
 
-  const livro = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(livro, planilha, "Registros");
+  // Tabela do Excel de verdade (Ctrl+T), não só autofilter: faixas
+  // zebradas azuis + setinha de filtro em cada coluna. O SheetJS (usado só
+  // pra ler o resumo.xlsx) não escreve isso na versão gratuita — por isso
+  // essa exportação usa o ExcelJS, que suporta os estilos nativos de tabela
+  // do Excel (`TableStyleMedium2` = tema azul).
+  const livro = new ExcelJS.Workbook();
+  const planilha = livro.addWorksheet("Registros");
+
+  planilha.addTable({
+    name: "Registros",
+    ref: "A1",
+    headerRow: true,
+    style: { theme: "TableStyleMedium2", showRowStripes: true },
+    columns: colunas.map((nome) => ({ name: nome, filterButton: true })),
+    rows: linhas.map((l) => colunas.map((coluna) => l[coluna])),
+  });
+
+  colunas.forEach((coluna, i) => {
+    const largura =
+      linhas.reduce((max, l) => Math.max(max, String(l[coluna] ?? "").length), coluna.length) + 2;
+    planilha.getColumn(i + 1).width = largura;
+  });
 
   const REGEX_DIACRITICOS = new RegExp("[\\u0300-\\u036f]", "g");
   const nomeBase = (el.modalTitulo.textContent || "registros")
@@ -803,7 +813,17 @@ function exportarModalExcel() {
     .replace(REGEX_DIACRITICOS, "") // tira acento
     .replace(/[^a-zA-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
-  XLSX.writeFile(livro, `${nomeBase || "registros"}.xlsx`);
+
+  const buffer = await livro.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${nomeBase || "registros"}.xlsx`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 // Cada fonte tem seu próprio status.json (última execução do robô
