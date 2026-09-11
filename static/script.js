@@ -1,7 +1,6 @@
 // Portal único que junta o Radar Fiscal e a Análise de Balanço (mesma ideia
 // da Análise de Entrega de SPED com ICMS/Contribuições): os dois relatórios
-// têm robôs e planilhas totalmente diferentes, mas o backend
-// (backend/orquestrador.py) já entrega tudo numa PLANILHA ÚNICA
+// têm planilhas totalmente diferentes, mas os dados já chegam consolidados
 // (data/relatorio_fechamentos/resumo.xlsx) no schema normalizado, com as
 // duas fontes empilhadas (coluna TipoRelatorio) e as correções de
 // Documentação já aplicadas. O front só faz fetch + parse (SheetJS) e lê —
@@ -91,23 +90,21 @@ const el = {
 // coluna "Documentação" — o usuário quer que a aba SEMPRE bata com o que a
 // coluna mostra (2026-09-03: "quando for pendente, esteja na aba pendente;
 // quando for concluído/recebido, na aba concluída"). A coluna Documentacao
-// já vem resolvida do backend: Análise de Balanço pela tarefa de retorno do
-// checklist em aberto (_juntar_checklist_ctb), Radar Fiscal pela regra de
-// Status (_corrigir_documentacao_inconsistente). Antes (2026-09-02) isso
-// media o Status "Fechado"; mudou porque a Documentacao virou sinal confiável.
+// já vem resolvida na planilha: Análise de Balanço pela tarefa de retorno do
+// checklist em aberto, Radar Fiscal pela regra de Status. Antes (2026-09-02)
+// isso media o Status "Fechado"; mudou porque a Documentacao virou sinal confiável.
 function documentacaoRecebida(r) {
   return r.Documentacao === "Documentação Recebida";
 }
 
 // ── Leitura da planilha única ──────────────────────────────────────────
-// O resumo.xlsx já vem no schema normalizado (backend/orquestrador.py:
-// _normalizar_radar_fiscal / _normalizar_analise_balanco em pandas), com as
-// duas fontes empilhadas e TODAS as regras de negócio já aplicadas:
+// O resumo.xlsx já vem no schema normalizado, com as duas fontes empilhadas
+// e TODAS as regras de negócio já aplicadas:
 //  - correção "Documentação Pendente só coexiste com Status Não importado"
-//    (só Radar Fiscal) → _corrigir_documentacao_inconsistente;
+//    (só Radar Fiscal);
 //  - "Documentação Recebida nunca carrega Documento Pendente" → idem;
 //  - Documentação da Análise de Balanço = tarefa de retorno do checklist em
-//    aberto → _juntar_checklist_ctb.
+//    aberto.
 // Aqui o front só lê. Colunas da planilha: TipoRelatorio, Id, Cliente,
 // Grupo, Unidade, Segmento, Gerente, Tributacao, Status, Documentacao,
 // Departamento, DataReferencia (texto ISO), DocumentoPendente.
@@ -115,7 +112,7 @@ function documentacaoRecebida(r) {
 // Texto livre com a pendência de documento de cada empresa (coluna
 // "Documento Pendente" da tabela / modal). Radar Fiscal: coluna "PENDENCIAS
 // FECHAMENTO" da Planilha de Mercados; Análise de Balanço: motivos do
-// Retorno do Checklist Contábil concatenados por cliente. O backend já
+// Retorno do Checklist Contábil concatenados por cliente. A planilha já
 // resolve de onde vem e quando zera — aqui só limpamos espaço nas pontas.
 function formatarDocumentoPendente(texto) {
   const limpo = (texto == null ? "" : String(texto)).trim();
@@ -133,14 +130,10 @@ function normalizarLinha(r) {
     Tributacao: r.Tributacao,
     Status: r.Status,
     Documentacao: r.Documentacao,
-    // Só existe no Radar Fiscal (2ª dimensão de navegação). Célula vazia da
-    // Análise de Balanço vem null do SheetJS — vira undefined pra bater com
-    // o que o resto do código já esperava.
-    Departamento: r.Departamento || undefined,
     DataReferencia: r.DataReferencia,
     DocumentoPendente: formatarDocumentoPendente(r.DocumentoPendente),
     // Prioridade / DocumentosSituacao vêm do Relatório de Distribuição
-    // (LEFT JOIN no backend, ver orquestrador.py::_juntar_distribuicao) —
+    // (já vêm juntadas na planilha por Id) —
     // célula vazia do SheetJS já chega null, celula() trata na exibição.
     Prioridade: r.Prioridade,
     DocumentosSituacao: r.DocumentosSituacao,
@@ -362,7 +355,7 @@ function renderizarDocGrupo(docNome, d, totalCategoria) {
   const classe = docNome === "Documentação Recebida" ? "recebida" : "pendente";
   const pctDoc = totalCategoria ? (d.total / totalCategoria) * 100 : 0;
   const chaveNaoImportado = statusOrdem()[statusOrdem().length - 1];
-  // Documentação Pendente: no Radar Fiscal, depois da correção do backend
+  // Documentação Pendente: no Radar Fiscal, depois da correção aplicada
   // (Fechado + Pendente vira Recebida), só sobra "Não importado" — as outras
   // linhas seriam sempre zero, então ela é sempre mostrada (mesmo em 0) como
   // referência. Na Análise de Balanço (desde 2026-09-03) a pendência vem da
@@ -663,7 +656,7 @@ function nomeComId(id, nome) {
   return id === null || id === undefined || id === "" ? rotuloNome : `${id} - ${rotuloNome}`;
 }
 
-// Defesa: o backend de cada fonte já remove o prefixo "Federal -" de
+// Defesa: a planilha de cada fonte já remove o prefixo "Federal -" de
 // Tributacao (MAPA_REGIME/MAPA_TRIBUTACAO), este é só um fallback caso um
 // dia isso mude.
 function regimeCurto(texto) {
@@ -826,7 +819,7 @@ async function exportarModalExcel() {
   URL.revokeObjectURL(url);
 }
 
-// Cada fonte tem seu próprio status.json (última execução do robô
+// Cada fonte tem seu próprio status.json (última atualização
 // correspondente) — guardados aqui pra trocar o texto exibido no header/
 // rodapé conforme o Tipo de Relatório ativo, sem precisar buscar de novo.
 const STATUS_URL_POR_TIPO = {
@@ -864,7 +857,7 @@ function formatarDataCurta(iso) {
 // Quantas empresas foram fechadas (DataReferencia — DataConfirmacao no
 // Radar Fiscal, DataImportacao na Análise de Balanço) em cada dia — vem
 // direto da planilha (cada linha já tem sua própria data), não de um
-// histórico acumulado por execução do robô. Respeita os filtros ativos
+// histórico acumulado entre atualizações. Respeita os filtros ativos
 // (mesmo conjunto `filtrados` dos cards/ranking).
 function contarConfirmacoesPorDia() {
   const dias = new Map();
@@ -879,9 +872,8 @@ function contarConfirmacoesPorDia() {
 }
 
 // DataReferencia vem de coluna diferente por fonte (Radar Fiscal =
-// DataConfirmacao, Análise de Balanço = DataImportacao — ver
-// _normalizar_radar_fiscal/_normalizar_analise_balanco em orquestrador.py),
-// então o subtítulo do gráfico precisa dizer a coisa certa em cada aba.
+// DataConfirmacao, Análise de Balanço = DataImportacao), então o subtítulo
+// do gráfico precisa dizer a coisa certa em cada aba.
 const SUBTITULO_EVOLUCAO_POR_TIPO = {
   "Radar Fiscal": "Empresas confirmadas por dia",
   "Análise de Balanço": "Empresas importadas por dia",
@@ -963,12 +955,20 @@ const UNIDADES_EXCLUIDAS = ["MG EXPRESS"];
 // usuário pediu pra juntar os dois portais).
 const ORDEM_TIPO_RELATORIO = ["Radar Fiscal", "Análise de Balanço"];
 
-// A "2ª dimensão" de navegação é "Departamento" no Radar Fiscal (aninhado
-// só nele) e "Segmento" na Análise de Balanço (que não tem Departamento) —
-// mesmo papel estrutural, fonte de dado diferente. Usado pela tela de
+// A "2ª dimensão" de navegação usa a coluna Segmento nas duas fontes —
+// rótulo "Por Departamento" no Radar Fiscal (nome que o usuário já usa pra
+// essa tela) e "Por Segmento" na Análise de Balanço, mas o campo agrupado é
+// o mesmo (Varejo/Indústria/Holding/Serviços/Associação). Usado pela tela de
 // Departamento/Segmento (ver renderizarTelaDepartamentos).
+//
+// Antes o Radar Fiscal agrupava por `DeptoFiscal` (equipe fiscal interna que
+// atende o cliente), mas essa coluna só distingue Varejo/Indústria dentro da
+// unidade SP — nas demais unidades (RJ, Santos, MG Express) tem 1 valor só,
+// e os clientes Holding/Serviços de SP ficam escondidos dentro de
+// EF-INDUSTRIA. Trocado pra Segmento a pedido do usuário (2026-09-11), que
+// queria ver Holding e Serviços como categorias próprias.
 const QUEBRA_CONFIG_POR_TIPO = {
-  "Radar Fiscal": { segunda: { chave: "Departamento", label: "Por Departamento" } },
+  "Radar Fiscal": { segunda: { chave: "Segmento", label: "Por Departamento" } },
   "Análise de Balanço": { segunda: { chave: "Segmento", label: "Por Segmento" } },
 };
 
@@ -1159,9 +1159,8 @@ function selecionarTipoRelatorio(tipo) {
   atualizarNavegacao();
 }
 
-// Uma planilha só: mesmo que os robôs tragam N arquivos/abas, o backend
-// entrega data/relatorio_fechamentos/resumo.xlsx com tudo empilhado. Parse
-// no navegador (SheetJS), igual aos outros portais MG.
+// Uma planilha só: data/relatorio_fechamentos/resumo.xlsx já vem com tudo
+// empilhado. Parse no navegador (SheetJS), igual aos outros portais MG.
 function carregarDados() {
   fetch("data/relatorio_fechamentos/resumo.xlsx?" + Date.now())
     .then((r) => {
@@ -1173,14 +1172,14 @@ function carregarDados() {
       const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null });
       dados = linhas.map(normalizarLinha).filter((r) => !UNIDADES_EXCLUIDAS.includes(r.Unidade));
       if (!dados.length) {
-        el.unidadesGrid.innerHTML = `<p class="evolucao-vazio">Nenhum dado exportado ainda — rode o robô (backend/orquestrador.py).</p>`;
+        el.unidadesGrid.innerHTML = `<p class="evolucao-vazio">Nenhum dado disponível. Atualize a planilha do portal para carregar os dados.</p>`;
         return;
       }
       const tipos = renderizarTipoRelatorioAbas([...new Set(dados.map((r) => r.TipoRelatorio).filter(Boolean))]);
       selecionarTipoRelatorio(tipos[0] || null);
     })
     .catch(() => {
-      el.unidadesGrid.innerHTML = `<p class="evolucao-vazio">Nenhum dado exportado ainda — rode o robô (backend/orquestrador.py).</p>`;
+      el.unidadesGrid.innerHTML = `<p class="evolucao-vazio">Nenhum dado disponível. Atualize a planilha do portal para carregar os dados.</p>`;
     });
 }
 
