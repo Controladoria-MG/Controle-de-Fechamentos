@@ -86,14 +86,21 @@ const el = {
   mGerente: document.getElementById("m-gerente"),
 };
 
-// Os placares do topo e as abas Pendente/Concluído da tabela seguem a
-// coluna "Documentação" — o usuário quer que a aba SEMPRE bata com o que a
-// coluna mostra (2026-09-03: "quando for pendente, esteja na aba pendente;
-// quando for concluído/recebido, na aba concluída"). A coluna Documentacao
-// já vem resolvida na planilha: Análise de Balanço pela tarefa de retorno do
-// checklist em aberto, Radar Fiscal pela regra de Status. Antes (2026-09-02)
-// isso media o Status "Fechado"; mudou porque a Documentacao virou sinal confiável.
+// Radar Fiscal (2026-09-18, pedido do usuário: "a documentação não define
+// qual a aba correta"): os placares do topo e a aba Pendente/Concluído da
+// tabela passam a seguir o STATUS direto, não mais a coluna "Documentação".
+// "Não importado"/"Simulando" = Pendente; "Fechado"/"Bloqueado"/"Com o GC" =
+// Concluído. Uma empresa "Simulando" pode estar com a Documentação já
+// "Recebida" (backend: STATUS_DOCUMENTACAO_RADAR_FISCAL) e ainda assim cair
+// na aba Pendente — os dois deixaram de ser a mesma coisa de propósito.
+// Análise de Balanço continua pela coluna "Documentação" (tarefa de retorno
+// do checklist em aberto, sem relação com Status).
+const STATUS_PENDENTE_RADAR_FISCAL = new Set(["Não importado", "Simulando"]);
+
 function documentacaoRecebida(r) {
+  if (r.TipoRelatorio === "Radar Fiscal") {
+    return !STATUS_PENDENTE_RADAR_FISCAL.has(r.Status);
+  }
   return r.Documentacao === "Documentação Recebida";
 }
 
