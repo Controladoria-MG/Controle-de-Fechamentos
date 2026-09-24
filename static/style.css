@@ -800,13 +800,15 @@ main {
 }
 
 .tabela-scroll {
-  overflow-x: hidden;
+  overflow-x: auto;
   max-height: 900px;
   overflow-y: auto;
 }
 
 table {
   width: 100%;
+  /* 12 colunas: abaixo disso os cabeçalhos não cabem — rola pro lado. */
+  min-width: 1240px;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.88rem;
@@ -824,8 +826,13 @@ thead th {
   line-height: 1.25;
   vertical-align: bottom;
   z-index: 1;
+  /* Cabeçalho só quebra entre palavras ("Doc. / Situação"), nunca no meio
+     de uma ("Prioridad/e") — as larguras do <colgroup> + o min-width da
+     tabela garantem que a maior palavra de cada cabeçalho caiba. */
   white-space: normal;
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  hyphens: none;
 }
 
 .oculto {
@@ -1049,12 +1056,13 @@ body.modal-aberto { overflow: hidden; }
 }
 
 .modal-corpo {
-  overflow-x: hidden;
+  overflow-x: auto;
   overflow-y: auto;
 }
 
 .modal-tabela {
   width: 100%;
+  min-width: 1240px;
   border-collapse: collapse;
   font-size: 0.83rem;
 }
@@ -1072,7 +1080,9 @@ body.modal-aberto { overflow: hidden; }
   color: var(--cinza-texto);
   border-bottom: 1px solid var(--borda);
   white-space: normal;
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  hyphens: none;
 }
 
 .modal-tabela td {
@@ -1090,3 +1100,22 @@ body.modal-aberto { overflow: hidden; }
   text-align: center;
   color: var(--cinza-muted);
 }
+
+/* Coluna/filtro "Desc. Remessa" — só existe no Radar Fiscal. Na Análise de
+   Balanço o <body> ganha .sem-desc-remessas e a coluna some: largura 0 e
+   conteúdo invisível — nunca display:none na <col>/<td>, que tira a célula
+   da grade e desalinha todas as colunas seguintes. */
+/* Quebra linha como a coluna Cliente (pedido do usuário); só a pílula da
+   data não se parte. */
+td.col-desc .sublinha-data { white-space: nowrap; }
+
+body.sem-desc-remessas col.col-desc { width: 0 !important; }
+body.sem-desc-remessas th.col-desc,
+body.sem-desc-remessas td.col-desc {
+  padding: 0 !important;
+  border-left: 0;
+  border-right: 0;
+  font-size: 0;
+  visibility: hidden;
+}
+body.sem-desc-remessas select.col-desc { display: none; }

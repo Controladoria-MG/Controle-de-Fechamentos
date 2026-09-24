@@ -84,6 +84,7 @@ const el = {
   mStatus: document.getElementById("m-status"),
   mDocumentacao: document.getElementById("m-documentacao"),
   mGerente: document.getElementById("m-gerente"),
+  mDescRemessas: document.getElementById("m-desc-remessas"),
 };
 
 // Radar Fiscal (2026-09-18, pedido do usuário: "a documentação não define
@@ -183,8 +184,11 @@ function filtrarConjunto(conjunto, campos) {
   const status = campos.status.value;
   const documentacao = campos.documentacao.value;
   const gerente = campos.gerente.value;
+  // Só o modal tem esse filtro (Radar Fiscal) — os outros blocos não passam.
+  const descRemessas = campos.descRemessas ? campos.descRemessas.value : "";
 
   return conjunto.filter((r) => {
+    if (descRemessas && r.DescRemessas !== descRemessas) return false;
     if (segmento && r.Segmento !== segmento) return false;
     if (regime && r.Tributacao !== regime) return false;
     if (prioridade && r.Prioridade !== prioridade) return false;
@@ -730,6 +734,22 @@ function regimeCurto(texto) {
 // Uma linha (<tr>) da tabela — compartilhada entre a tabela do fim da
 // página (renderizarTabela) e a tabela do modal (renderizarModalTabela),
 // pras duas terem exatamente as mesmas 11 colunas.
+// Coluna "Desc. Remessa" (Radar Fiscal) — mesmo visual do card: texto sem
+// maiúsculas + data em pílula. Na Análise de Balanço a coluna fica escondida
+// pela classe `sem-desc-remessas` no <body> (ver selecionarTipoRelatorio).
+function descRemessasTexto(desc) {
+  if (!desc) return "";
+  const { texto, data } = formatarDescRemessas(desc);
+  return data ? `${texto} ${data}` : texto;
+}
+
+function descRemessasCelulaHTML(desc) {
+  if (!desc) return `<td class="col-desc">—</td>`;
+  const { texto, data } = formatarDescRemessas(desc);
+  const titulo = descRemessasTexto(desc).replace(/"/g, "&quot;");
+  return `<td class="col-desc" title="${titulo}">${texto}${data ? ` <span class="sublinha-data">${data}</span>` : ""}</td>`;
+}
+
 function linhaTabelaHTML(r) {
   const doc = r.Documentacao;
   const rotuloDoc = doc ? doc.replace("Documentação ", "") : "—";
@@ -744,6 +764,7 @@ function linhaTabelaHTML(r) {
       <td>${celula(r.Prioridade)}</td>
       <td>${celula(r.DocumentosSituacao)}</td>
       <td>${celula(rotuloStatus(r.Status))}</td>
+      ${descRemessasCelulaHTML(r.DescRemessas)}
       <td>${rotuloDoc}</td>
       <td title="${r.DocumentoPendente ? r.DocumentoPendente.replace(/"/g, "&quot;") : ""}">${celula(r.DocumentoPendente)}</td>
     </tr>
@@ -778,6 +799,7 @@ function abrirModal(registros, titulo, contexto) {
   repopularSelect(el.mStatus, new Set(registros.map((r) => r.Status).filter(Boolean)), rotuloStatus);
   repopularSelect(el.mDocumentacao, new Set(registros.map((r) => r.Documentacao).filter(Boolean)));
   repopularSelect(el.mGerente, new Set(registros.map((r) => r.Gerente).filter(Boolean)));
+  repopularSelect(el.mDescRemessas, new Set(registros.map((r) => r.DescRemessas).filter(Boolean)), descRemessasTexto);
   el.mBusca.value = "";
   el.mSegmento.value = "";
   el.mRegime.value = "";
@@ -786,6 +808,7 @@ function abrirModal(registros, titulo, contexto) {
   el.mStatus.value = "";
   el.mDocumentacao.value = "";
   el.mGerente.value = "";
+  el.mDescRemessas.value = "";
 
   renderizarModalTabela();
   el.modal.classList.remove("oculto");
@@ -798,6 +821,7 @@ function renderizarModalTabela() {
     busca: el.mBusca, segmento: el.mSegmento, regime: el.mRegime,
     prioridade: el.mPrioridade, docSituacao: el.mDocSituacao,
     status: el.mStatus, documentacao: el.mDocumentacao, gerente: el.mGerente,
+    descRemessas: el.mDescRemessas,
   };
   const filtrados_ = filtrarConjunto(modalRegistros, camposModal);
   modalFiltrados = filtrados_;
@@ -810,7 +834,7 @@ function renderizarModalTabela() {
 
   el.modalCorpo.innerHTML = filtrados_.length
     ? filtrados_.map(linhaTabelaHTML).join("")
-    : `<tr><td colspan="11" class="modal-vazio">Nenhum registro.</td></tr>`;
+    : `<tr><td colspan="12" class="modal-vazio">Nenhum registro.</td></tr>`;
 }
 
 function fecharModal() {
@@ -834,6 +858,7 @@ async function exportarModalExcel() {
     Prioridade: celula(r.Prioridade),
     "Doc. Situação": celula(r.DocumentosSituacao),
     Status: celula(rotuloStatus(r.Status)),
+    ...(r.TipoRelatorio === "Radar Fiscal" ? { "Desc. Remessa": celula(descRemessasTexto(r.DescRemessas)) } : {}),
     "Documentação": celula(r.Documentacao),
     "Doc. Pendente": celula(r.DocumentoPendente),
   }));
@@ -1205,6 +1230,7 @@ function atualizarNavegacao() {
 
 function selecionarTipoRelatorio(tipo) {
   tipoRelatorioAtivo = tipo;
+  document.body.classList.toggle("sem-desc-remessas", tipo !== "Radar Fiscal");
   dadosTipo = dados.filter((r) => r.TipoRelatorio === tipo);
 
   el.tipoRelatorioAbas.querySelectorAll(".tipo-relatorio-aba").forEach((botao) => {
@@ -1289,7 +1315,7 @@ el.modal.addEventListener("click", (evento) => {
 document.addEventListener("keydown", (evento) => {
   if (evento.key === "Escape" && !el.modal.classList.contains("oculto")) fecharModal();
 });
-[el.mBusca, el.mSegmento, el.mRegime, el.mPrioridade, el.mDocSituacao, el.mStatus, el.mDocumentacao, el.mGerente].forEach((campo) => {
+[el.mBusca, el.mSegmento, el.mRegime, el.mPrioridade, el.mDocSituacao, el.mStatus, el.mDescRemessas, el.mDocumentacao, el.mGerente].forEach((campo) => {
   campo.addEventListener("input", renderizarModalTabela);
   campo.addEventListener("change", renderizarModalTabela);
 });
