@@ -286,6 +286,21 @@ function criarContadorDocs() {
 const STATUS_COM_DESC_REMESSAS = new Set(["Simulando"]);
 const SEM_DESC_REMESSAS = "Sem descrição";
 
+// A planilha traz tudo em MAIÚSCULAS ("ENVIADO SOMENTE ICMS") — no card vira
+// "Enviado somente ICMS", preservando as siglas. A data que o backend junta
+// em "COM A GERÊNCIA EM 21/09/2026" sai separada e curta (21/09).
+const SIGLAS_DESC_REMESSAS = /\b(icms|pis|cofins|gc|ie|efd|sped)\b/g;
+
+function formatarDescRemessas(desc) {
+  if (desc === SEM_DESC_REMESSAS) return { texto: desc, data: null };
+  const m = desc.match(/^(.*?)\s+(\d{2})\/(\d{2})\/\d{4}$/);
+  const base = (m ? m[1] : desc).toLocaleLowerCase("pt-BR").replace(SIGLAS_DESC_REMESSAS, (s) => s.toUpperCase());
+  return {
+    texto: base.charAt(0).toLocaleUpperCase("pt-BR") + base.slice(1),
+    data: m ? `${m[2]}/${m[3]}` : null,
+  };
+}
+
 function contarDetalhado(rows, chave) {
   const grupos = new Map();
   rows.forEach((r) => {
@@ -407,15 +422,17 @@ function renderizarDocGrupo(docNome, d, totalCategoria) {
       const mapaDesc = d.desc && d.desc.get(status);
       const subLinhas = mapaDesc
         ? [...mapaDesc.entries()]
-            .sort((a, b) => (a[0] === SEM_DESC_REMESSAS) - (b[0] === SEM_DESC_REMESSAS) || b[1] - a[1])
+            .sort((a, b) => (a[0] === SEM_DESC_REMESSAS) - (b[0] === SEM_DESC_REMESSAS) || b[1] - a[1] || a[0].localeCompare(b[0]))
             .map(([desc, n]) => {
               const descEsc = desc.replace(/"/g, "&quot;");
-              const pctDesc = totalCategoria ? (n / totalCategoria) * 100 : 0;
+              const { texto, data } = formatarDescRemessas(desc);
+              const titulo = data ? `${texto} ${data}` : texto;
+              const semDesc = desc === SEM_DESC_REMESSAS ? " sem-desc" : "";
               return `
-        <div class="status-linha status-sublinha" data-status="${status.replace(/"/g, "&quot;")}" data-desc="${descEsc}">
-          <span class="status-nome" title="${descEsc}">${desc}</span>
-          <span class="status-valores"><b>${n.toLocaleString("pt-BR")}</b><span class="status-pct">${formatarPct(pctDesc)}</span></span>
-        </div>`;
+          <div class="status-linha status-sublinha${semDesc}" data-status="${status.replace(/"/g, "&quot;")}" data-desc="${descEsc}">
+            <span class="status-nome" title="${titulo.replace(/"/g, "&quot;")}">${texto}${data ? ` <span class="sublinha-data">${data}</span>` : ""}</span>
+            <span class="status-valores"><b>${n.toLocaleString("pt-BR")}</b></span>
+          </div>`;
             })
             .join("")
         : "";
@@ -423,7 +440,7 @@ function renderizarDocGrupo(docNome, d, totalCategoria) {
         <div class="status-linha" data-status="${status.replace(/"/g, "&quot;")}">
           <span class="status-nome" title="${rotulo}">${rotulo}</span>
           <span class="status-valores"><b>${count.toLocaleString("pt-BR")}</b><span class="status-pct">${formatarPct(pctStatus)}</span></span>
-        </div>${subLinhas}
+        </div>${subLinhas ? `<div class="status-detalhe">${subLinhas}</div>` : ""}
       `;
     })
     .join("");

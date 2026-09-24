@@ -660,18 +660,45 @@ main {
   flex: 1 1 auto;
 }
 
-/* Quebra por "DESC. REMESSAS" embaixo da linha "Simulando" (Radar Fiscal). */
-.status-sublinha {
-  margin-left: 10px;
-  padding-left: 8px;
-  border-left: 2px solid var(--cinza-muted);
+/* Quebra por "DESC. REMESSAS" embaixo da linha "Simulando" (Radar Fiscal):
+   bloco levemente destacado, preso à linha de cima por um fio vermelho claro. */
+.status-detalhe {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: -1px 0 2px 4px;
+  padding: 4px 6px 4px 9px;
+  border-left: 2px solid var(--vermelho-claro);
+  border-radius: 0 6px 6px 0;
+  background: var(--bg-card-alt);
 }
 
-.status-sublinha .status-nome,
-.status-sublinha .status-valores b {
+.status-sublinha .status-nome {
   font-size: 0.74rem;
-  font-weight: 500;
   color: var(--cinza-texto);
+}
+
+.status-sublinha .status-valores b {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--cinza-texto);
+}
+
+.status-sublinha.sem-desc .status-nome {
+  font-style: italic;
+  color: var(--cinza-muted);
+}
+
+.sublinha-data {
+  display: inline-block;
+  margin-left: 3px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--mg-vermelho);
+  background: color-mix(in srgb, var(--mg-vermelho) 10%, transparent);
 }
 
 .status-valores {
