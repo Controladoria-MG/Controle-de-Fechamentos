@@ -660,6 +660,20 @@ main {
   flex: 1 1 auto;
 }
 
+/* Quebra por "DESC. REMESSAS" embaixo da linha "Simulando" (Radar Fiscal). */
+.status-sublinha {
+  margin-left: 10px;
+  padding-left: 8px;
+  border-left: 2px solid var(--cinza-muted);
+}
+
+.status-sublinha .status-nome,
+.status-sublinha .status-valores b {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--cinza-texto);
+}
+
 .status-valores {
   display: flex;
   align-items: baseline;

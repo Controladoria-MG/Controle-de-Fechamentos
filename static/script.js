@@ -139,6 +139,9 @@ function normalizarLinha(r) {
     Documentacao: r.Documentacao,
     DataReferencia: r.DataReferencia,
     DocumentoPendente: formatarDocumentoPendente(r.DocumentoPendente),
+    // "DESC. REMESSAS" da Planilha de Mercados (só Radar Fiscal) — quebra
+    // exibida embaixo da linha "Simulando" dos cards.
+    DescRemessas: formatarDocumentoPendente(r.DescRemessas),
     // Prioridade / DocumentosSituacao vêm do Relatório de Distribuição
     // (já vêm juntadas na planilha por Id) —
     // célula vazia do SheetJS já chega null, celula() trata na exibição.
@@ -278,6 +281,11 @@ function criarContadorDocs() {
   return docs;
 }
 
+// Status do Radar Fiscal que ganham, dentro do card, a quebra pela
+// "DESC. REMESSAS" da Planilha de Mercados (ex.: "ENVIADO SOMENTE ICMS").
+const STATUS_COM_DESC_REMESSAS = new Set(["Simulando"]);
+const SEM_DESC_REMESSAS = "Sem descrição";
+
 function contarDetalhado(rows, chave) {
   const grupos = new Map();
   rows.forEach((r) => {
@@ -294,6 +302,14 @@ function contarDetalhado(rows, chave) {
 
     const status = r.Status || "Não importado";
     d.status.set(status, (d.status.get(status) || 0) + 1);
+
+    if (STATUS_COM_DESC_REMESSAS.has(status) && r.TipoRelatorio === "Radar Fiscal") {
+      if (!d.desc) d.desc = new Map();
+      if (!d.desc.has(status)) d.desc.set(status, new Map());
+      const mapaDesc = d.desc.get(status);
+      const desc = r.DescRemessas || SEM_DESC_REMESSAS;
+      mapaDesc.set(desc, (mapaDesc.get(desc) || 0) + 1);
+    }
   });
   return [...grupos.entries()].sort((a, b) => b[1].total - a[1].total);
 }
@@ -386,11 +402,28 @@ function renderizarDocGrupo(docNome, d, totalCategoria) {
     .map(([status, count]) => {
       const pctStatus = totalCategoria ? (count / totalCategoria) * 100 : 0;
       const rotulo = rotuloStatus(status);
+      // Quebra por "DESC. REMESSAS" (Radar Fiscal, Status "Simulando"): uma
+      // sub-linha por descrição, % sobre o total do card como as demais.
+      const mapaDesc = d.desc && d.desc.get(status);
+      const subLinhas = mapaDesc
+        ? [...mapaDesc.entries()]
+            .sort((a, b) => (a[0] === SEM_DESC_REMESSAS) - (b[0] === SEM_DESC_REMESSAS) || b[1] - a[1])
+            .map(([desc, n]) => {
+              const descEsc = desc.replace(/"/g, "&quot;");
+              const pctDesc = totalCategoria ? (n / totalCategoria) * 100 : 0;
+              return `
+        <div class="status-linha status-sublinha" data-status="${status.replace(/"/g, "&quot;")}" data-desc="${descEsc}">
+          <span class="status-nome" title="${descEsc}">${desc}</span>
+          <span class="status-valores"><b>${n.toLocaleString("pt-BR")}</b><span class="status-pct">${formatarPct(pctDesc)}</span></span>
+        </div>`;
+            })
+            .join("")
+        : "";
       return `
         <div class="status-linha" data-status="${status.replace(/"/g, "&quot;")}">
           <span class="status-nome" title="${rotulo}">${rotulo}</span>
           <span class="status-valores"><b>${count.toLocaleString("pt-BR")}</b><span class="status-pct">${formatarPct(pctStatus)}</span></span>
-        </div>
+        </div>${subLinhas}
       `;
     })
     .join("");
@@ -557,12 +590,18 @@ function ligarModalNosCards(container, rows, chave) {
       const docNome = grupoEl.dataset.doc;
       grupoEl.querySelectorAll(".status-linha").forEach((linhaEl) => {
         const status = linhaEl.dataset.status;
+        const desc = linhaEl.dataset.desc;
         linhaEl.classList.add("linha-modal");
         linhaEl.addEventListener("click", (ev) => {
           ev.stopPropagation();
+          const doStatus = rows.filter((r) => r[chave] === valorCard && r.Documentacao === docNome && r.Status === status);
+          if (desc === undefined) {
+            abrirModal(doStatus, rotuloStatus(status), `${valorCard} · ${docNome}`);
+            return;
+          }
           abrirModal(
-            rows.filter((r) => r[chave] === valorCard && r.Documentacao === docNome && r.Status === status),
-            rotuloStatus(status), `${valorCard} · ${docNome}`
+            doStatus.filter((r) => (r.DescRemessas || SEM_DESC_REMESSAS) === desc),
+            `${rotuloStatus(status)} · ${desc}`, `${valorCard} · ${docNome}`
           );
         });
       });
