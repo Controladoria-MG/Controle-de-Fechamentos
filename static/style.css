@@ -1125,3 +1125,9 @@ body.sem-desc-remessas td.col-desc {
   visibility: hidden;
 }
 body.sem-desc-remessas select.col-desc { display: none; }
+
+/* Linha de status do topbar nunca quebra linha (2026-09-30): sem espaço,
+   corta com reticências em vez de jogar o resto pra baixo. */
+.header-info { min-width: 0; }
+.header-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.btn-tema { flex-shrink: 0; }

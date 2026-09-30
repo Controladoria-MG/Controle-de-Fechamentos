@@ -996,7 +996,8 @@ function atualizarStatusExibido() {
   const comp = new Date(st.data.getFullYear(), st.data.getMonth() - 1, 1);
   const compStr = `${String(comp.getMonth() + 1).padStart(2, "0")}/${comp.getFullYear()}`;
   el.status.innerHTML =
-    st.texto + `<span class="header-sep">|</span>Fechamentos da competência ${compStr}`;
+    st.texto + `<span class="header-sep">|</span>Fechamentos da competência ${compStr}` +
+    `<span class="header-sep">|</span>Para atualizar seus dados recarregue a página usando "Ctrl+F5"`;
 }
 
 function formatarDataCurta(iso) {
