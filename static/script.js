@@ -967,14 +967,36 @@ function carregarStatus() {
   ).then(atualizarStatusExibido);
 }
 
-function atualizarStatusExibido() {
+// Cabeçalho igual ao do Controle de Tarefas: "Base atualizada em
+// dd/mm/aaaa hh:mm | Fechamentos da competência mm/aaaa". A data vem do
+// Last-Modified do resumo.xlsx (o botão "Atualizar base" do servidor só troca
+// o .xlsx; os status*.json não vão pro servidor). Os robôs sempre filtram a
+// competência do mês anterior ao da extração, então ela sai da própria data
+// da base. Sem Last-Modified, cai no status.json de cada fonte.
+let ultimaModificacao = null;
+
+function textoStatusFonte() {
+  if (ultimaModificacao) {
+    const d = ultimaModificacao;
+    const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    return { data: d, texto: `Base atualizada em ${d.toLocaleDateString("pt-BR")} ${hora}` };
+  }
   const s = statusPorTipo[tipoRelatorioAtivo];
-  if (!s) {
+  if (!s) return null;
+  const d = new Date(s.ultima_execucao);
+  return { data: d, texto: `${tipoRelatorioAtivo} atualizado em ${d.toLocaleString("pt-BR")}` };
+}
+
+function atualizarStatusExibido() {
+  const st = textoStatusFonte();
+  if (!st) {
     el.status.textContent = "Nenhuma execução registrada ainda.";
     return;
   }
-  const data = new Date(s.ultima_execucao);
-  el.status.textContent = `${tipoRelatorioAtivo} atualizado em ${data.toLocaleString("pt-BR")}`;
+  const comp = new Date(st.data.getFullYear(), st.data.getMonth() - 1, 1);
+  const compStr = `${String(comp.getMonth() + 1).padStart(2, "0")}/${comp.getFullYear()}`;
+  el.status.innerHTML =
+    st.texto + `<span class="header-sep">|</span>Fechamentos da competência ${compStr}`;
 }
 
 function formatarDataCurta(iso) {
@@ -1293,6 +1315,9 @@ function carregarDados() {
   fetch("data/relatorio_fechamentos/resumo.xlsx?" + Date.now())
     .then((r) => {
       if (!r.ok) throw new Error("resumo.xlsx não encontrado");
+      const cab = r.headers.get("Last-Modified");
+      const lastMod = cab ? new Date(cab) : null;
+      if (lastMod && !isNaN(lastMod)) ultimaModificacao = lastMod;
       return r.arrayBuffer();
     })
     .then((buffer) => {
