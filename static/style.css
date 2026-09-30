@@ -1101,7 +1101,8 @@ body.modal-aberto { overflow: hidden; }
   color: var(--cinza-muted);
 }
 
-/* Coluna/filtro "Desc. Remessa" — só existe no Radar Fiscal. Na Análise de
+/* Colunas/filtro "Desc. Remessa" e "Parado há" (classe col-desc) — só
+   existem no Radar Fiscal. Na Análise de
    Balanço o <body> ganha .sem-desc-remessas e a coluna some: largura 0 e
    conteúdo invisível — nunca display:none na <col>/<td>, que tira a célula
    da grade e desalinha todas as colunas seguintes. */

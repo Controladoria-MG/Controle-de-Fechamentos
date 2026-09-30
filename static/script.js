@@ -94,15 +94,20 @@ const el = {
 // Concluído. Uma empresa "Simulando" pode estar com a Documentação já
 // "Recebida" (backend: STATUS_DOCUMENTACAO_RADAR_FISCAL) e ainda assim cair
 // na aba Pendente — os dois deixaram de ser a mesma coisa de propósito.
-// Análise de Balanço continua pela coluna "Documentação" (tarefa de retorno
-// do checklist em aberto, sem relação com Status).
+// Análise de Balanço (2026-09-30, pedido do usuário: "fazer um de-para igual
+// no Radar Fiscal") também passou a seguir o STATUS: "Não Importado"/
+// "Simulando"/"Excluido Contábil" = Pendente; "Fechado"/"Importado Contábil"/
+// "OK - Com GC" = Concluído. Antes seguia a coluna "Documentação" (tarefa de
+// retorno do checklist em aberto) — a coluna continua igual, só não decide
+// mais a aba.
 const STATUS_PENDENTE_RADAR_FISCAL = new Set(["Não importado", "Simulando"]);
+const STATUS_PENDENTE_ANALISE_BALANCO = new Set(["Não Importado", "Simulando", "Excluido Contábil"]);
 
 function documentacaoRecebida(r) {
   if (r.TipoRelatorio === "Radar Fiscal") {
     return !STATUS_PENDENTE_RADAR_FISCAL.has(r.Status);
   }
-  return r.Documentacao === "Documentação Recebida";
+  return !STATUS_PENDENTE_ANALISE_BALANCO.has(r.Status);
 }
 
 // ── Leitura da planilha única ──────────────────────────────────────────
@@ -148,6 +153,11 @@ function normalizarLinha(r) {
     // célula vazia do SheetJS já chega null, celula() trata na exibição.
     Prioridade: r.Prioridade,
     DocumentosSituacao: r.DocumentosSituacao,
+    // Tópico 3 (Nilton): baixa da tarefa "Retorno do Check-List Fiscal"
+    // (texto ISO) e dias parado desde ela — só Radar Fiscal, e DiasParado só
+    // pra quem ainda não fechou (calculado no backend, na data da extração).
+    DocRecebidaEm: r.DocRecebidaEm,
+    DiasParado: r.DiasParado,
     TipoRelatorio: r.TipoRelatorio,
   };
 }
@@ -750,6 +760,28 @@ function descRemessasCelulaHTML(desc) {
   return `<td class="col-desc" title="${titulo}">${texto}${data ? ` <span class="sublinha-data">${data}</span>` : ""}</td>`;
 }
 
+// Coluna "Parado há" (Radar Fiscal): dias desde que a documentação foi
+// recebida (baixa do retorno do checklist fiscal), só pra quem não fechou.
+// Escondida na Análise de Balanço pela mesma classe da Desc. Remessa.
+function diasParadoTexto(dias) {
+  if (dias === null || dias === undefined || dias === "") return "";
+  const n = Number(dias);
+  return `${n} ${n === 1 ? "dia" : "dias"}`;
+}
+
+function paradoCelulaHTML(r) {
+  if (r.DiasParado === null || r.DiasParado === undefined || r.DiasParado === "") {
+    return `<td class="col-desc">—</td>`;
+  }
+  const desde = r.DocRecebidaEm ? `Documentação recebida em ${formatarDataISO(r.DocRecebidaEm)}` : "";
+  return `<td class="col-desc" title="${desde}">${diasParadoTexto(r.DiasParado)}</td>`;
+}
+
+function formatarDataISO(iso) {
+  const [a, m, d] = String(iso).slice(0, 10).split("-");
+  return `${d}/${m}/${a}`;
+}
+
 function linhaTabelaHTML(r) {
   const doc = r.Documentacao;
   const rotuloDoc = doc ? doc.replace("Documentação ", "") : "—";
@@ -766,6 +798,7 @@ function linhaTabelaHTML(r) {
       <td>${celula(rotuloStatus(r.Status))}</td>
       ${descRemessasCelulaHTML(r.DescRemessas)}
       <td>${rotuloDoc}</td>
+      ${paradoCelulaHTML(r)}
       <td title="${r.DocumentoPendente ? r.DocumentoPendente.replace(/"/g, "&quot;") : ""}">${celula(r.DocumentoPendente)}</td>
     </tr>
   `;
@@ -834,7 +867,7 @@ function renderizarModalTabela() {
 
   el.modalCorpo.innerHTML = filtrados_.length
     ? filtrados_.map(linhaTabelaHTML).join("")
-    : `<tr><td colspan="12" class="modal-vazio">Nenhum registro.</td></tr>`;
+    : `<tr><td colspan="13" class="modal-vazio">Nenhum registro.</td></tr>`;
 }
 
 function fecharModal() {
@@ -860,6 +893,12 @@ async function exportarModalExcel() {
     Status: celula(rotuloStatus(r.Status)),
     ...(r.TipoRelatorio === "Radar Fiscal" ? { "Desc. Remessa": celula(descRemessasTexto(r.DescRemessas)) } : {}),
     "Documentação": celula(r.Documentacao),
+    ...(r.TipoRelatorio === "Radar Fiscal"
+      ? {
+          "Doc. recebida em": r.DocRecebidaEm ? formatarDataISO(r.DocRecebidaEm) : "—",
+          "Parado há (dias)": r.DiasParado === null || r.DiasParado === undefined || r.DiasParado === "" ? "—" : Number(r.DiasParado),
+        }
+      : {}),
     "Doc. Pendente": celula(r.DocumentoPendente),
   }));
 
