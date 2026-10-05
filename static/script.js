@@ -110,6 +110,14 @@ function documentacaoRecebida(r) {
   return !STATUS_PENDENTE_ANALISE_BALANCO.has(r.Status);
 }
 
+// Bloco do card (Recebida/Pendente) em que a linha cai — segue o STATUS,
+// mesma regra das abas e placares (2026-10-05, pedido do usuário: "cards
+// devem seguir os status"). Antes os cards agrupavam pela coluna
+// "Documentação" e um mesmo Status ("Com o GC") aparecia nos dois blocos.
+function grupoFechamento(r) {
+  return documentacaoRecebida(r) ? "Documentação Recebida" : "Documentação Pendente";
+}
+
 // ── Leitura da planilha única ──────────────────────────────────────────
 // O resumo.xlsx já vem no schema normalizado, com as duas fontes empilhadas
 // e TODAS as regras de negócio já aplicadas:
@@ -264,7 +272,7 @@ const ORDEM_DOCUMENTACAO = ["Documentação Recebida", "Documentação Pendente"
 // Pendente (ver ali).
 const STATUS_ORDEM_POR_TIPO = {
   "Radar Fiscal": ["Fechado", "Bloqueado", "Simulando", "Com o GC", "Não importado"],
-  "Análise de Balanço": ["Fechado", "Importado Contábil", "Simulando", "OK - Com GC", "Não Importado"],
+  "Análise de Balanço": ["Fechado", "Importado Contábil", "Simulando", "OK - Com GC", "Excluido Contábil", "Não Importado"],
 };
 // Só ajusta a grafia exibida da Análise de Balanço pra bater com o Radar
 // Fiscal onde o significado é o mesmo (contagem interna continua pela
@@ -324,7 +332,7 @@ function contarDetalhado(rows, chave) {
     const g = grupos.get(valor);
     g.total++;
 
-    const doc = r.Documentacao || "Sem documentação";
+    const doc = grupoFechamento(r);
     if (!g.docs.has(doc)) g.docs.set(doc, criarContadorStatus());
     const d = g.docs.get(doc);
     d.total++;
@@ -407,20 +415,9 @@ function renderizarDocGrupo(docNome, d, totalCategoria) {
   const classe = docNome === "Documentação Recebida" ? "recebida" : "pendente";
   const pctDoc = totalCategoria ? (d.total / totalCategoria) * 100 : 0;
   const chaveNaoImportado = statusOrdem()[statusOrdem().length - 1];
-  // Documentação Pendente: no Radar Fiscal, depois da correção aplicada
-  // (Fechado + Pendente vira Recebida), só sobra "Não importado" — as outras
-  // linhas seriam sempre zero, então ela é sempre mostrada (mesmo em 0) como
-  // referência. Na Análise de Balanço (desde 2026-09-03) a pendência vem da
-  // tarefa de retorno do checklist em aberto e pode coexistir com qualquer
-  // Status, então mostramos a linha "não importado" mais qualquer outro
-  // Status que realmente tenha registro.
-  //
-  // Documentação Recebida: "não importado" NÃO pode ser excluída de vez
-  // (bug corrigido 2026-09-08) — na Análise de Balanço a Documentação é
-  // decidida pela tarefa de checklist, não pelo Status, então a maioria das
-  // linhas "Recebida" tem Status "Não Importado" (~94% na calibração real).
-  // Excluir essa linha incondicionalmente fazia a soma das linhas de Status
-  // não bater com o total mostrado no cabeçalho do card.
+  // Os blocos seguem o Status (ver grupoFechamento): cada Status cai num
+  // bloco só. Pendente sempre mostra a linha "não importado" (mesmo em 0)
+  // como referência; os demais Status só aparecem se tiverem registro.
   const statusOrdenado = classe === "pendente"
     ? statusOrdem()
         .filter((s) => s === chaveNaoImportado || (d.status.get(s) || 0) > 0)
@@ -625,7 +622,7 @@ function ligarModalNosCards(container, rows, chave) {
         linhaEl.classList.add("linha-modal");
         linhaEl.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          const doStatus = rows.filter((r) => r[chave] === valorCard && r.Documentacao === docNome && r.Status === status);
+          const doStatus = rows.filter((r) => r[chave] === valorCard && grupoFechamento(r) === docNome && r.Status === status);
           if (desc === undefined) {
             abrirModal(doStatus, rotuloStatus(status), `${valorCard} · ${docNome}`);
             return;
@@ -680,7 +677,7 @@ function renderizarRankingGerentes() {
     if (!contagens.has(gerente)) contagens.set(gerente, { total: 0, pendente: 0 });
     const c = contagens.get(gerente);
     c.total++;
-    if (r.Documentacao !== "Documentação Recebida") c.pendente++;
+    if (!documentacaoRecebida(r)) c.pendente++;
   });
 
   const lista = [...contagens.entries()]
@@ -712,12 +709,12 @@ function renderizarRankingGerentes() {
 
   // Clicar numa linha do ranking abre o modal com as pendências daquele
   // gerente — exatamente o conjunto que gerou o número mostrado (c.pendente
-  // = Documentação != Recebida).
+  // = Status pendente, ver documentacaoRecebida).
   el.rankingGerentes.querySelectorAll(".ranking-linha").forEach((linhaEl) => {
     linhaEl.addEventListener("click", () => {
       const nome = linhaEl.dataset.valor;
       abrirModal(
-        filtrados.filter((r) => r.Gerente === nome && r.Documentacao !== "Documentação Recebida"),
+        filtrados.filter((r) => r.Gerente === nome && !documentacaoRecebida(r)),
         nome, "Pendências do gerente"
       );
     });
