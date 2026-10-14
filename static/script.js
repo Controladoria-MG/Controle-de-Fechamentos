@@ -18,6 +18,10 @@ let dados = [];
 let dadosTipo = [];
 let dadosEscopo = [];
 let tipoRelatorioAtivo = null;
+// Id → Status da empresa no Radar Fiscal (vem do radar_fiscal.xlsx, já
+// empilhado no resumo.xlsx). Usado só na coluna "Status Radar Fiscal" do
+// modal "Não Importado" da Análise de Balanço.
+let statusRadarFiscalPorId = new Map();
 let escopo = { unidade: null, depto: null };
 let filtrados = [];
 let filtradosTabela = [];
@@ -779,7 +783,14 @@ function formatarDataISO(iso) {
   return `${d}/${m}/${a}`;
 }
 
-function linhaTabelaHTML(r) {
+// `comColunaModal`: a tabela do modal tem uma coluna a mais ("Status Radar
+// Fiscal", sempre presente no HTML do modal mas visível só no modal "Não
+// Importado" da Análise de Balanço — ver abrirModal). A tabela geral não tem.
+function statusRadarFiscalDe(r) {
+  return statusRadarFiscalPorId.get(String(r.Id)) || "";
+}
+
+function linhaTabelaHTML(r, comColunaModal = false) {
   const doc = r.Documentacao;
   const rotuloDoc = doc ? doc.replace("Documentação ", "") : "—";
   return `
@@ -793,6 +804,7 @@ function linhaTabelaHTML(r) {
       <td>${celula(r.Prioridade)}</td>
       <td>${celula(r.DocumentosSituacao)}</td>
       <td>${celula(rotuloStatus(r.Status))}</td>
+      ${comColunaModal ? `<td class="col-status-rf">${celula(statusRadarFiscalDe(r))}</td>` : ""}
       ${descRemessasCelulaHTML(r.DescRemessas)}
       <td>${rotuloDoc}</td>
       ${paradoCelulaHTML(r)}
@@ -802,7 +814,7 @@ function linhaTabelaHTML(r) {
 }
 
 function renderizarTabela() {
-  el.corpo.innerHTML = filtradosTabela.map(linhaTabelaHTML).join("");
+  el.corpo.innerHTML = filtradosTabela.map((r) => linhaTabelaHTML(r)).join("");
   el.contagem.textContent = `${filtradosTabela.length.toLocaleString("pt-BR")} empresa(s)`;
 }
 
@@ -816,11 +828,17 @@ function renderizarTabela() {
 let modalRegistros = [];
 let modalContexto = "";
 let modalFiltrados = []; // último recorte renderizado — o que "Exportar Excel" baixa
+let modalComStatusRF = false; // modal "Não Importado" da Análise de Balanço
 
 function abrirModal(registros, titulo, contexto) {
   modalRegistros = registros;
   modalContexto = contexto || "";
   el.modalTitulo.textContent = titulo || "Registros";
+  modalComStatusRF =
+    tipoRelatorioAtivo === "Análise de Balanço" &&
+    registros.length > 0 &&
+    registros.every((r) => r.Status === "Não Importado");
+  el.modal.classList.toggle("com-status-rf", modalComStatusRF);
 
   repopularSelect(el.mSegmento, new Set(registros.map((r) => r.Segmento).filter(Boolean)));
   repopularSelect(el.mRegime, new Set(registros.map((r) => r.Tributacao).filter(Boolean)));
@@ -863,8 +881,8 @@ function renderizarModalTabela() {
   el.modalSub.textContent = [modalContexto, contagem].filter(Boolean).join(" · ");
 
   el.modalCorpo.innerHTML = filtrados_.length
-    ? filtrados_.map(linhaTabelaHTML).join("")
-    : `<tr><td colspan="13" class="modal-vazio">Nenhum registro.</td></tr>`;
+    ? filtrados_.map((r) => linhaTabelaHTML(r, true)).join("")
+    : `<tr><td colspan="14" class="modal-vazio">Nenhum registro.</td></tr>`;
 }
 
 function fecharModal() {
@@ -888,6 +906,7 @@ async function exportarModalExcel() {
     Prioridade: celula(r.Prioridade),
     "Doc. Situação": celula(r.DocumentosSituacao),
     Status: celula(rotuloStatus(r.Status)),
+    ...(modalComStatusRF ? { "Status Radar Fiscal": celula(statusRadarFiscalDe(r)) } : {}),
     ...(r.TipoRelatorio === "Radar Fiscal" ? { "Desc. Remessa": celula(descRemessasTexto(r.DescRemessas)) } : {}),
     "Documentação": celula(r.Documentacao),
     ...(r.TipoRelatorio === "Radar Fiscal"
@@ -1321,7 +1340,11 @@ function carregarDados() {
     .then((buffer) => {
       const wb = XLSX.read(buffer, { type: "array" });
       const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null });
-      dados = linhas.map(normalizarLinha).filter((r) => !UNIDADES_EXCLUIDAS.includes(r.Unidade));
+      const todas = linhas.map(normalizarLinha);
+      statusRadarFiscalPorId = new Map(
+        todas.filter((r) => r.TipoRelatorio === "Radar Fiscal").map((r) => [String(r.Id), r.Status])
+      );
+      dados = todas.filter((r) => !UNIDADES_EXCLUIDAS.includes(r.Unidade));
       if (!dados.length) {
         el.unidadesGrid.innerHTML = `<p class="evolucao-vazio">Nenhum dado disponível. Atualize a planilha do portal para carregar os dados.</p>`;
         return;

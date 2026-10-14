@@ -1126,6 +1126,19 @@ body.sem-desc-remessas td.col-desc {
 }
 body.sem-desc-remessas select.col-desc { display: none; }
 
+/* Coluna "Status Radar Fiscal" — só no modal "Não Importado" da Análise de
+   Balanço (o modal ganha .com-status-rf em abrirModal). Fora disso some do
+   mesmo jeito da col-desc (largura 0, nunca display:none). */
+.modal-overlay:not(.com-status-rf) col.col-status-rf { width: 0 !important; }
+.modal-overlay:not(.com-status-rf) th.col-status-rf,
+.modal-overlay:not(.com-status-rf) td.col-status-rf {
+  padding: 0 !important;
+  border-left: 0;
+  border-right: 0;
+  font-size: 0;
+  visibility: hidden;
+}
+
 /* Linha de status do topbar nunca quebra linha (2026-09-30): sem espaço,
    corta com reticências em vez de jogar o resto pra baixo. */
 .header-info { min-width: 0; }
