@@ -197,6 +197,57 @@
         </div>
       </section>
     </div>
+
+    <!-- Aba "Planilha de Status": a Planilha de Mercados inteira (aba
+         "Mercados" do resumo.xlsx), 4 filtros e o contador por ÍA. -->
+    <div id="secao-planilha-status" class="oculto">
+      <section class="filtros-card card" aria-label="Filtros da Planilha de Status">
+        <div class="filtros-header">
+          <span class="filtros-titulo">Filtros</span>
+          <button id="p-limpar" type="button" class="btn-limpar-filtros">Limpar filtros</button>
+        </div>
+        <div class="filtros-grid">
+          <div class="filtro-grupo">
+            <label class="filtro-label" for="p-regime">Tributação</label>
+            <select id="p-regime" class="filtro-select"><option value="">Todas</option></select>
+          </div>
+          <div class="filtro-grupo">
+            <label class="filtro-label" for="p-prioridade">Prioridade</label>
+            <select id="p-prioridade" class="filtro-select"><option value="">Todas</option></select>
+          </div>
+          <div class="filtro-grupo">
+            <label class="filtro-label" for="p-status">Status</label>
+            <select id="p-status" class="filtro-select"><option value="">Todos</option></select>
+          </div>
+          <div class="filtro-grupo">
+            <label class="filtro-label" for="p-gerente">Gerente de Contas</label>
+            <select id="p-gerente" class="filtro-select"><option value="">Todos</option></select>
+          </div>
+        </div>
+      </section>
+
+      <section class="card ia-card" aria-label="Status (ÍA)">
+        <div class="ia-cabecalho">
+          <h2 class="quebra-titulo">Status <span class="ia-subtitulo">por ÍA</span></h2>
+          <div class="ia-total" id="ia-total"></div>
+        </div>
+        <div class="ia-lista" id="ia-contador"></div>
+      </section>
+
+      <section class="card tabela-card">
+        <div class="tabela-scroll tabela-scroll-mercados">
+          <!-- Todas as colunas da Planilha de Mercados, na ordem original —
+               o cabeçalho é montado pelo script a partir da aba "Mercados". -->
+          <table id="tabela-planilha-status" class="tabela-mercados">
+            <thead id="planilha-status-cabecalho"></thead>
+            <tbody id="planilha-status-corpo"></tbody>
+          </table>
+        </div>
+        <div class="paginacao">
+          <span id="planilha-status-contagem"></span>
+        </div>
+      </section>
+    </div>
   </main>
 
   <!-- Modal: registros de uma linha de detalhe de um card (bloco de

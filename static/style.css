@@ -1144,3 +1144,148 @@ body.sem-desc-remessas select.col-desc { display: none; }
 .header-info { min-width: 0; }
 .header-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .btn-tema { flex-shrink: 0; }
+
+/* Aba "Planilha de Status": contador por ÍA. Uma linha por letra, com a
+   descrição que ela representa (DESC. REMESSAS), barra proporcional à maior
+   letra, quantidade e percentual — mesmo desenho do ranking de gerentes.
+   Duas colunas no desktop. Clicar numa linha filtra a tabela. */
+.ia-cabecalho {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.ia-subtitulo {
+  font-weight: 400;
+  color: var(--cinza-muted);
+  font-size: 0.85rem;
+  margin-left: 4px;
+}
+.ia-total {
+  font-size: 0.85rem;
+  color: var(--cinza-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ia-limpar {
+  margin-left: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--mg-vermelho);
+  cursor: pointer;
+}
+.ia-limpar:hover { text-decoration: underline; }
+
+.ia-lista {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 32px;
+  row-gap: 4px;
+}
+
+.ia-linha {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1.6fr) minmax(60px, 1fr) 44px 38px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ia-linha:hover { background: var(--fundo); }
+.ia-linha.ativa {
+  background: var(--vermelho-suave);
+  border-left-color: var(--mg-vermelho);
+}
+body.tema-escuro .ia-linha.ativa { background: rgba(192, 0, 0, 0.18); }
+
+.ia-letra {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--mg-vermelho);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.ia-linha.ia-sem .ia-letra {
+  background: none;
+  border: 1px dashed var(--cinza-muted);
+  color: var(--cinza-muted);
+}
+
+.ia-desc {
+  font-size: 0.84rem;
+  color: var(--cinza-texto);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ia-linha.ativa .ia-desc { color: var(--mg-vermelho); font-weight: 700; }
+
+.ia-trilha {
+  height: 10px;
+  background: var(--status-neutral-bg);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.ia-barra {
+  display: block;
+  height: 100%;
+  background: var(--mg-vermelho);
+  border-radius: 4px;
+}
+
+.ia-valor {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--cinza-escuro);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ia-pct {
+  font-size: 0.75rem;
+  color: var(--cinza-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 900px) {
+  .ia-lista { grid-template-columns: 1fr; }
+}
+
+/* Tabela da Planilha de Mercados: 27 colunas, largura pelo conteúdo e
+   rolagem lateral (não cabe em table-layout fixo). Texto longo corta em
+   reticências; o conteúdo inteiro fica no title da célula. */
+table.tabela-mercados {
+  table-layout: auto;
+  width: max-content;
+  min-width: 100%;
+}
+table.tabela-mercados th {
+  white-space: nowrap;
+}
+table.tabela-mercados td {
+  white-space: nowrap;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mais curta que as outras tabelas: com a tabela inteira na tela, a barra
+   de rolagem lateral fica visível sem precisar rolar a página. */
+.tabela-scroll-mercados {
+  max-height: 75vh;
+}

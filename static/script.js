@@ -89,6 +89,18 @@ const el = {
   mDocumentacao: document.getElementById("m-documentacao"),
   mGerente: document.getElementById("m-gerente"),
   mDescRemessas: document.getElementById("m-desc-remessas"),
+  // Aba "Planilha de Status" — só tabela, 4 filtros + contador por ÍA.
+  secaoPlanilhaStatus: document.getElementById("secao-planilha-status"),
+  pRegime: document.getElementById("p-regime"),
+  pPrioridade: document.getElementById("p-prioridade"),
+  pStatus: document.getElementById("p-status"),
+  pGerente: document.getElementById("p-gerente"),
+  pLimpar: document.getElementById("p-limpar"),
+  iaContador: document.getElementById("ia-contador"),
+  iaTotal: document.getElementById("ia-total"),
+  pCabecalho: document.getElementById("planilha-status-cabecalho"),
+  pCorpo: document.getElementById("planilha-status-corpo"),
+  pContagem: document.getElementById("planilha-status-contagem"),
 };
 
 // Radar Fiscal (2026-09-18, pedido do usuário: "a documentação não define
@@ -997,10 +1009,12 @@ function textoStatusFonte() {
     const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     return { data: d, texto: `Base atualizada em ${d.toLocaleDateString("pt-BR")} ${hora}` };
   }
-  const s = statusPorTipo[tipoRelatorioAtivo];
+  // A Planilha de Status é o próprio Radar Fiscal.
+  const fonte = tipoRelatorioAtivo === ABA_PLANILHA_STATUS ? "Radar Fiscal" : tipoRelatorioAtivo;
+  const s = statusPorTipo[fonte];
   if (!s) return null;
   const d = new Date(s.ultima_execucao);
-  return { data: d, texto: `${tipoRelatorioAtivo} atualizado em ${d.toLocaleString("pt-BR")}` };
+  return { data: d, texto: `${fonte} atualizado em ${d.toLocaleString("pt-BR")}` };
 }
 
 function atualizarStatusExibido() {
@@ -1119,7 +1133,8 @@ const UNIDADES_EXCLUIDAS = ["MG EXPRESS"];
 
 // Ordem fixa das abas do topo (Radar Fiscal primeiro, igual à ordem que o
 // usuário pediu pra juntar os dois portais).
-const ORDEM_TIPO_RELATORIO = ["Radar Fiscal", "Análise de Balanço"];
+const ABA_PLANILHA_STATUS = "Planilha de Status";
+const ORDEM_TIPO_RELATORIO = ["Radar Fiscal", "Análise de Balanço", ABA_PLANILHA_STATUS];
 
 // A "2ª dimensão" de navegação usa a coluna Segmento nas duas fontes —
 // rótulo "Por Departamento" no Radar Fiscal (nome que o usuário já usa pra
@@ -1306,10 +1321,174 @@ function atualizarNavegacao() {
   atualizarCorpoDashboard();
 }
 
+// ── Aba "Planilha de Status" ───────────────────────────────────────────
+// A Planilha de Mercados inteira (aba "Mercados" do resumo.xlsx), com todas
+// as colunas na ordem original, sem navegação por Unidade. Os 4 filtros e o
+// contador apontam para colunas da própria planilha (MERCADOS_CAMPO). O
+// contador por ÍA conta sobre os 4 filtros e, clicado, filtra a tabela.
+const MERCADOS_CAMPO = {
+  tributacao: "PORTE EMPRESA",
+  prioridade: "Prioridade",
+  status: "ATUAL",
+  gerente: "Gerente Contas",
+  ia: "ÍA",
+};
+const SEM_IA = "Sem ÍA";
+let mercados = [];
+let mercadosColunas = [];
+let iaAtivo = null;
+
+function iaDe(r) {
+  const v = r[MERCADOS_CAMPO.ia];
+  return v === null || v === undefined || String(v).trim() === "" ? SEM_IA : String(v).trim();
+}
+
+function filtrarPlanilhaStatus() {
+  const filtros = [
+    [MERCADOS_CAMPO.tributacao, el.pRegime.value],
+    [MERCADOS_CAMPO.prioridade, el.pPrioridade.value],
+    [MERCADOS_CAMPO.status, el.pStatus.value],
+    [MERCADOS_CAMPO.gerente, el.pGerente.value],
+  ].filter(([, valor]) => valor);
+  return mercados.filter((r) => filtros.every(([campo, valor]) => String(r[campo] ?? "") === valor));
+}
+
+function pctContador(valor, total) {
+  if (!total || !valor) return "0%";
+  if (valor === total) return "100%";
+  const pct = (valor / total) * 100;
+  return pct < 1 ? "<1%" : `${Math.min(99, Math.round(pct))}%`;
+}
+
+// Cada letra da ÍA corresponde a uma descrição fixa da coluna DESC. REMESSAS
+// (A = Pendência de documentos, B = Com a gerência, D = Impostos enviados…).
+// O rótulo sai da própria planilha (descrição mais comum de cada letra), sem
+// o "em"/"para" que antecede a data em algumas ("COM A GERÊNCIA EM").
+function descricoesIA() {
+  const porLetra = new Map();
+  mercados.forEach((r) => {
+    const letra = iaDe(r);
+    const desc = r["DESC. REMESSAS"];
+    if (letra === SEM_IA || !desc) return;
+    if (!porLetra.has(letra)) porLetra.set(letra, new Map());
+    const m = porLetra.get(letra);
+    m.set(desc, (m.get(desc) || 0) + 1);
+  });
+  const rotulos = new Map();
+  porLetra.forEach((m, letra) => {
+    const desc = [...m.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    rotulos.set(letra, formatarDescRemessas(desc).texto.replace(/\s+(em|para)$/i, ""));
+  });
+  return rotulos;
+}
+
+let rotulosIA = new Map();
+
+function renderizarContadorIA(rows) {
+  const contagem = new Map();
+  rows.forEach((r) => contagem.set(iaDe(r), (contagem.get(iaDe(r)) || 0) + 1));
+  const valores = [...contagem.keys()].sort((a, b) => {
+    if (a === SEM_IA) return 1;
+    if (b === SEM_IA) return -1;
+    return a.localeCompare(b, "pt-BR");
+  });
+  if (iaAtivo && !contagem.has(iaAtivo)) iaAtivo = null;
+  const total = rows.length;
+  const maior = Math.max(1, ...contagem.values());
+
+  el.iaTotal.innerHTML = iaAtivo
+    ? `${contagem.get(iaAtivo).toLocaleString("pt-BR")} de ${total.toLocaleString("pt-BR")} empresas
+       <button type="button" class="ia-limpar" id="ia-limpar">Mostrar todas</button>`
+    : `${total.toLocaleString("pt-BR")} ${total === 1 ? "empresa" : "empresas"}`;
+
+  el.iaContador.innerHTML = valores.map((v) => {
+    const n = contagem.get(v);
+    const semIA = v === SEM_IA;
+    const rotulo = semIA ? "Status não preenchido" : rotulosIA.get(v) || "—";
+    return `
+      <button type="button" class="ia-linha${v === iaAtivo ? " ativa" : ""}${semIA ? " ia-sem" : ""}"
+        data-valor="${v.replace(/"/g, "&quot;")}" title="${rotulo.replace(/"/g, "&quot;")}">
+        <span class="ia-letra">${semIA ? "—" : v}</span>
+        <span class="ia-desc">${rotulo}</span>
+        <span class="ia-trilha"><span class="ia-barra" style="width: ${(n / maior) * 100}%"></span></span>
+        <span class="ia-valor">${n.toLocaleString("pt-BR")}</span>
+        <span class="ia-pct">${pctContador(n, total)}</span>
+      </button>
+    `;
+  }).join("");
+
+  el.iaContador.querySelectorAll(".ia-linha").forEach((botao) => {
+    botao.addEventListener("click", () => {
+      iaAtivo = botao.dataset.valor === iaAtivo ? null : botao.dataset.valor;
+      aplicarFiltroPlanilhaStatus();
+    });
+  });
+  const limpar = document.getElementById("ia-limpar");
+  if (limpar) {
+    limpar.addEventListener("click", () => {
+      iaAtivo = null;
+      aplicarFiltroPlanilhaStatus();
+    });
+  }
+}
+
+function escaparHTML(texto) {
+  return String(texto).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function linhaMercadosHTML(r) {
+  return `<tr>${mercadosColunas.map((c) => {
+    const v = r[c];
+    if (v === null || v === undefined || v === "") return "<td>—</td>";
+    const texto = escaparHTML(v);
+    return `<td title="${texto}">${texto}</td>`;
+  }).join("")}</tr>`;
+}
+
+function aplicarFiltroPlanilhaStatus() {
+  const base = filtrarPlanilhaStatus();
+  renderizarContadorIA(base);
+  const linhas = iaAtivo ? base.filter((r) => iaDe(r) === iaAtivo) : base;
+  el.pCorpo.innerHTML = linhas.length
+    ? linhas.map(linhaMercadosHTML).join("")
+    : `<tr><td colspan="${mercadosColunas.length || 1}" class="modal-vazio">Nenhum registro.</td></tr>`;
+  el.pContagem.textContent = `${linhas.length.toLocaleString("pt-BR")} ${linhas.length === 1 ? "empresa" : "empresas"}`;
+}
+
+function limparFiltrosPlanilhaStatus() {
+  el.pRegime.value = "";
+  el.pPrioridade.value = "";
+  el.pStatus.value = "";
+  el.pGerente.value = "";
+  iaAtivo = null;
+}
+
+function valoresMercados(campo) {
+  return new Set(mercados.map((r) => r[campo]).filter((v) => v !== null && v !== undefined && v !== "").map(String));
+}
+
+function mostrarPlanilhaStatus() {
+  [el.secaoUnidades, el.secaoDepartamentos, el.corpoDashboard, el.btnVoltarPainel,
+    el.placaresGrid, el.breadcrumbBar].forEach((secao) => secao.classList.add("oculto"));
+
+  el.pCabecalho.innerHTML = `<tr>${mercadosColunas.map((c) => `<th>${escaparHTML(c)}</th>`).join("")}</tr>`;
+
+  rotulosIA = descricoesIA();
+  limparFiltrosPlanilhaStatus();
+  repopularSelect(el.pRegime, valoresMercados(MERCADOS_CAMPO.tributacao), regimeCurto);
+  repopularSelect(el.pPrioridade, valoresMercados(MERCADOS_CAMPO.prioridade));
+  repopularSelect(el.pStatus, valoresMercados(MERCADOS_CAMPO.status));
+  repopularSelect(el.pGerente, valoresMercados(MERCADOS_CAMPO.gerente));
+  aplicarFiltroPlanilhaStatus();
+}
+
 function selecionarTipoRelatorio(tipo) {
   tipoRelatorioAtivo = tipo;
-  document.body.classList.toggle("sem-desc-remessas", tipo !== "Radar Fiscal");
-  dadosTipo = dados.filter((r) => r.TipoRelatorio === tipo);
+  const planilhaStatus = tipo === ABA_PLANILHA_STATUS;
+  const fonte = planilhaStatus ? "Radar Fiscal" : tipo;
+  document.body.classList.toggle("sem-desc-remessas", fonte !== "Radar Fiscal");
+  dadosTipo = dados.filter((r) => r.TipoRelatorio === fonte);
+  el.secaoPlanilhaStatus.classList.toggle("oculto", !planilhaStatus);
 
   el.tipoRelatorioAbas.querySelectorAll(".tipo-relatorio-aba").forEach((botao) => {
     const ativo = botao.dataset.valor === tipo;
@@ -1323,7 +1502,8 @@ function selecionarTipoRelatorio(tipo) {
   escopo = { unidade: null, depto: null };
 
   atualizarStatusExibido();
-  atualizarNavegacao();
+  if (planilhaStatus) mostrarPlanilhaStatus();
+  else atualizarNavegacao();
 }
 
 // Uma planilha só: data/relatorio_fechamentos/resumo.xlsx já vem com tudo
@@ -1345,11 +1525,18 @@ function carregarDados() {
         todas.filter((r) => r.TipoRelatorio === "Radar Fiscal").map((r) => [String(r.Id), r.Status])
       );
       dados = todas.filter((r) => !UNIDADES_EXCLUIDAS.includes(r.Unidade));
+      const abaMercados = wb.Sheets["Mercados"];
+      if (abaMercados) {
+        mercadosColunas = (XLSX.utils.sheet_to_json(abaMercados, { header: 1 })[0] || []).map(String);
+        mercados = XLSX.utils.sheet_to_json(abaMercados, { defval: null });
+      }
       if (!dados.length) {
         el.unidadesGrid.innerHTML = `<p class="evolucao-vazio">Nenhum dado disponível. Atualize a planilha do portal para carregar os dados.</p>`;
         return;
       }
-      const tipos = renderizarTipoRelatorioAbas([...new Set(dados.map((r) => r.TipoRelatorio).filter(Boolean))]);
+      const tiposBase = [...new Set(dados.map((r) => r.TipoRelatorio).filter(Boolean))];
+      if (mercados.length) tiposBase.push(ABA_PLANILHA_STATUS);
+      const tipos = renderizarTipoRelatorioAbas(tiposBase);
       selecionarTipoRelatorio(tipos[0] || null);
     })
     .catch(() => {
@@ -1384,6 +1571,15 @@ elBtnTema.addEventListener("click", () => {
 });
 
 el.btnVoltarPainel.addEventListener("click", voltarUmaSecao);
+
+[el.pRegime, el.pPrioridade, el.pStatus, el.pGerente].forEach((campo) => {
+  campo.addEventListener("change", aplicarFiltroPlanilhaStatus);
+});
+
+el.pLimpar.addEventListener("click", () => {
+  limparFiltrosPlanilhaStatus();
+  aplicarFiltroPlanilhaStatus();
+});
 
 // Abas Pendente/Concluído da tabela do fim da página.
 el.tabelaAbas.querySelectorAll(".tabela-aba").forEach((botao) => {
