@@ -1287,5 +1287,5 @@ table.tabela-mercados td {
 /* Mais curta que as outras tabelas: com a tabela inteira na tela, a barra
    de rolagem lateral fica visível sem precisar rolar a página. */
 .tabela-scroll-mercados {
-  max-height: 75vh;
+  max-height: 88vh;
 }
