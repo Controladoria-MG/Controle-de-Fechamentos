@@ -126,11 +126,16 @@ function documentacaoRecebida(r) {
   return !STATUS_PENDENTE_ANALISE_BALANCO.has(r.Status);
 }
 
-// Bloco do card (Recebida/Pendente) em que a linha cai — segue o STATUS,
-// mesma regra das abas e placares (2026-10-05, pedido do usuário: "cards
-// devem seguir os status"). Antes os cards agrupavam pela coluna
-// "Documentação" e um mesmo Status ("Com o GC") aparecia nos dois blocos.
+// Bloco do card (Recebida/Pendente) em que a linha cai. Radar Fiscal
+// (2026-10-23, pedido do usuário: "no card a linhagem é pela documentação"):
+// segue a coluna "Documentação", não o Status — "Simulando" com Documentação
+// Recebida fica no bloco Recebida do card, mesmo caindo na aba Pendente.
+// Análise de Balanço continua pelo STATUS (2026-10-05, "cards devem seguir
+// os status"), igual às abas e placares.
 function grupoFechamento(r) {
+  if (r.TipoRelatorio === "Radar Fiscal") {
+    return r.Documentacao === "Documentação Recebida" ? "Documentação Recebida" : "Documentação Pendente";
+  }
   return documentacaoRecebida(r) ? "Documentação Recebida" : "Documentação Pendente";
 }
 
@@ -431,8 +436,8 @@ function renderizarDocGrupo(docNome, d, totalCategoria) {
   const classe = docNome === "Documentação Recebida" ? "recebida" : "pendente";
   const pctDoc = totalCategoria ? (d.total / totalCategoria) * 100 : 0;
   const chaveNaoImportado = statusOrdem()[statusOrdem().length - 1];
-  // Os blocos seguem o Status (ver grupoFechamento): cada Status cai num
-  // bloco só. Pendente sempre mostra a linha "não importado" (mesmo em 0)
+  // Bloco de cada linha: ver grupoFechamento (Radar Fiscal pela
+  // Documentação, Análise de Balanço pelo Status). Pendente sempre mostra a linha "não importado" (mesmo em 0)
   // como referência; os demais Status só aparecem se tiverem registro.
   const statusOrdenado = classe === "pendente"
     ? statusOrdem()
