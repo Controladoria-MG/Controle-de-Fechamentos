@@ -1262,8 +1262,12 @@ body.tema-escuro .ia-linha.ativa { background: rgba(192, 0, 0, 0.18); }
   font-variant-numeric: tabular-nums;
 }
 
+/* Filtros da Planilha de Status: 8 filtros em 2 linhas de 4. */
+.filtros-grid.filtros-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
 @media (max-width: 900px) {
   .ia-lista { grid-template-columns: 1fr; }
+  .filtros-grid.filtros-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* Tabela da Planilha de Mercados: 27 colunas, largura pelo conteúdo e
