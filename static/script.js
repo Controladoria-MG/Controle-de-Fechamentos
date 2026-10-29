@@ -89,12 +89,16 @@ const el = {
   mDocumentacao: document.getElementById("m-documentacao"),
   mGerente: document.getElementById("m-gerente"),
   mDescRemessas: document.getElementById("m-desc-remessas"),
-  // Aba "Planilha de Status" — só tabela, 4 filtros + contador por ÍA.
+  // Aba "Planilha de Status" — só tabela, 8 filtros + contador por ÍA.
   secaoPlanilhaStatus: document.getElementById("secao-planilha-status"),
-  pRegime: document.getElementById("p-regime"),
+  pSegmento: document.getElementById("p-segmento"),
+  pGrupo: document.getElementById("p-grupo"),
   pPrioridade: document.getElementById("p-prioridade"),
-  pStatus: document.getElementById("p-status"),
+  pRegime: document.getElementById("p-regime"),
+  pColaborador: document.getElementById("p-colaborador"),
+  pGerenteMaster: document.getElementById("p-gerente-master"),
   pGerente: document.getElementById("p-gerente"),
+  pStatus: document.getElementById("p-status"),
   pLimpar: document.getElementById("p-limpar"),
   iaContador: document.getElementById("ia-contador"),
   iaTotal: document.getElementById("ia-total"),
@@ -1328,14 +1332,18 @@ function atualizarNavegacao() {
 
 // ── Aba "Planilha de Status" ───────────────────────────────────────────
 // A Planilha de Mercados inteira (aba "Mercados" do resumo.xlsx), com todas
-// as colunas na ordem original, sem navegação por Unidade. Os 4 filtros e o
+// as colunas na ordem original, sem navegação por Unidade. Os 8 filtros e o
 // contador apontam para colunas da própria planilha (MERCADOS_CAMPO). O
-// contador por ÍA conta sobre os 4 filtros e, clicado, filtra a tabela.
+// contador por ÍA conta sobre os 8 filtros e, clicado, filtra a tabela.
 const MERCADOS_CAMPO = {
-  tributacao: "PORTE EMPRESA",
+  segmento: "Segmento",
+  grupo: "GRUPO",
   prioridade: "Prioridade",
-  status: "ATUAL",
+  tributacao: "PORTE EMPRESA",
+  colaborador: "Colaborador",
+  gerenteMaster: "Gerente Master",
   gerente: "Gerente Contas",
+  status: "ATUAL",
   ia: "ÍA",
 };
 const SEM_IA = "Sem ÍA";
@@ -1350,10 +1358,14 @@ function iaDe(r) {
 
 function filtrarPlanilhaStatus() {
   const filtros = [
-    [MERCADOS_CAMPO.tributacao, el.pRegime.value],
+    [MERCADOS_CAMPO.segmento, el.pSegmento.value],
+    [MERCADOS_CAMPO.grupo, el.pGrupo.value],
     [MERCADOS_CAMPO.prioridade, el.pPrioridade.value],
-    [MERCADOS_CAMPO.status, el.pStatus.value],
+    [MERCADOS_CAMPO.tributacao, el.pRegime.value],
+    [MERCADOS_CAMPO.colaborador, el.pColaborador.value],
+    [MERCADOS_CAMPO.gerenteMaster, el.pGerenteMaster.value],
     [MERCADOS_CAMPO.gerente, el.pGerente.value],
+    [MERCADOS_CAMPO.status, el.pStatus.value],
   ].filter(([, valor]) => valor);
   return mercados.filter((r) => filtros.every(([campo, valor]) => String(r[campo] ?? "") === valor));
 }
@@ -1461,10 +1473,14 @@ function aplicarFiltroPlanilhaStatus() {
 }
 
 function limparFiltrosPlanilhaStatus() {
-  el.pRegime.value = "";
+  el.pSegmento.value = "";
+  el.pGrupo.value = "";
   el.pPrioridade.value = "";
-  el.pStatus.value = "";
+  el.pRegime.value = "";
+  el.pColaborador.value = "";
+  el.pGerenteMaster.value = "";
   el.pGerente.value = "";
+  el.pStatus.value = "";
   iaAtivo = null;
 }
 
@@ -1480,10 +1496,14 @@ function mostrarPlanilhaStatus() {
 
   rotulosIA = descricoesIA();
   limparFiltrosPlanilhaStatus();
-  repopularSelect(el.pRegime, valoresMercados(MERCADOS_CAMPO.tributacao), regimeCurto);
+  repopularSelect(el.pSegmento, valoresMercados(MERCADOS_CAMPO.segmento));
+  repopularSelect(el.pGrupo, valoresMercados(MERCADOS_CAMPO.grupo));
   repopularSelect(el.pPrioridade, valoresMercados(MERCADOS_CAMPO.prioridade));
-  repopularSelect(el.pStatus, valoresMercados(MERCADOS_CAMPO.status));
+  repopularSelect(el.pRegime, valoresMercados(MERCADOS_CAMPO.tributacao), regimeCurto);
+  repopularSelect(el.pColaborador, valoresMercados(MERCADOS_CAMPO.colaborador));
+  repopularSelect(el.pGerenteMaster, valoresMercados(MERCADOS_CAMPO.gerenteMaster));
   repopularSelect(el.pGerente, valoresMercados(MERCADOS_CAMPO.gerente));
+  repopularSelect(el.pStatus, valoresMercados(MERCADOS_CAMPO.status));
   aplicarFiltroPlanilhaStatus();
 }
 
@@ -1577,7 +1597,8 @@ elBtnTema.addEventListener("click", () => {
 
 el.btnVoltarPainel.addEventListener("click", voltarUmaSecao);
 
-[el.pRegime, el.pPrioridade, el.pStatus, el.pGerente].forEach((campo) => {
+[el.pSegmento, el.pGrupo, el.pPrioridade, el.pRegime, el.pColaborador,
+  el.pGerenteMaster, el.pGerente, el.pStatus].forEach((campo) => {
   campo.addEventListener("change", aplicarFiltroPlanilhaStatus);
 });
 

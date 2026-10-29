@@ -199,7 +199,7 @@
     </div>
 
     <!-- Aba "Planilha de Status": a Planilha de Mercados inteira (aba
-         "Mercados" do resumo.xlsx), 4 filtros e o contador por ÍA. -->
+         "Mercados" do resumo.xlsx), 8 filtros e o contador por ÍA. -->
     <div id="secao-planilha-status" class="oculto">
       <section class="filtros-card card" aria-label="Filtros da Planilha de Status">
         <div class="filtros-header">
@@ -208,20 +208,36 @@
         </div>
         <div class="filtros-grid">
           <div class="filtro-grupo">
-            <label class="filtro-label" for="p-regime">Tributação</label>
-            <select id="p-regime" class="filtro-select"><option value="">Todas</option></select>
+            <label class="filtro-label" for="p-segmento">Segmento</label>
+            <select id="p-segmento" class="filtro-select"><option value="">Todos</option></select>
+          </div>
+          <div class="filtro-grupo">
+            <label class="filtro-label" for="p-grupo">Grupo</label>
+            <select id="p-grupo" class="filtro-select"><option value="">Todos</option></select>
           </div>
           <div class="filtro-grupo">
             <label class="filtro-label" for="p-prioridade">Prioridade</label>
             <select id="p-prioridade" class="filtro-select"><option value="">Todas</option></select>
           </div>
           <div class="filtro-grupo">
-            <label class="filtro-label" for="p-status">Status</label>
-            <select id="p-status" class="filtro-select"><option value="">Todos</option></select>
+            <label class="filtro-label" for="p-regime">Tributação</label>
+            <select id="p-regime" class="filtro-select"><option value="">Todas</option></select>
+          </div>
+          <div class="filtro-grupo">
+            <label class="filtro-label" for="p-colaborador">Colaborador</label>
+            <select id="p-colaborador" class="filtro-select"><option value="">Todos</option></select>
+          </div>
+          <div class="filtro-grupo">
+            <label class="filtro-label" for="p-gerente-master">Gerente Master</label>
+            <select id="p-gerente-master" class="filtro-select"><option value="">Todos</option></select>
           </div>
           <div class="filtro-grupo">
             <label class="filtro-label" for="p-gerente">Gerente de Contas</label>
             <select id="p-gerente" class="filtro-select"><option value="">Todos</option></select>
+          </div>
+          <div class="filtro-grupo">
+            <label class="filtro-label" for="p-status">Status</label>
+            <select id="p-status" class="filtro-select"><option value="">Todos</option></select>
           </div>
         </div>
       </section>
